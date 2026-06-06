@@ -1,3 +1,9 @@
+import React from 'react';
+import { render } from 'ink';
+
+import { App } from './ui/App.js';
+import { createInitialAppState } from './ui/state.js';
+
 export type RunCliOptions = {
   argv: string[];
 };
@@ -7,5 +13,5 @@ export function getCliName(): string {
 }
 
 export async function runCli(_options: RunCliOptions): Promise<void> {
-  process.stdout.write(`${getCliName()}\n`);
+  render(React.createElement(App, { state: createInitialAppState() }));
 }
