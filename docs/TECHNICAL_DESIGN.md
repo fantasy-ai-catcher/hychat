@@ -744,6 +744,16 @@ pnpm test
 11. 实现按需刷新，并把 Cron 作为可选缓存预刷新和孤儿缓存清理。
 12. 补齐测试和端到端验收脚本。
 
+当前实现状态：
+
+1. 已完成 Node.js TypeScript 项目骨架。
+2. 已完成环境变量解析、命令解析、canonical symbol、quote cache policy。
+3. 已完成 Supabase initial migration、RLS policy 和清理函数。
+4. 已完成 Supabase repository helper 和 Realtime topic helper。
+5. 已完成 `get-stock-quotes` Edge Function 的核心 resolver、Twelve Data adapter 和当前报价缓存逻辑。
+6. 已完成 Ink terminal UI shell 和 reducer。
+7. 尚未完成真实登录交互、Supabase Realtime runtime wiring 和端到端 Supabase 环境验收。
+
 ## 15. 后续扩展
 
 1. 消息搜索。
