@@ -64,4 +64,12 @@ describe('initial Supabase schema migration', () => {
     expect(migration).toContain('create or replace function public.cleanup_old_messages');
     expect(migration).toContain('create or replace function public.cleanup_orphan_stock_quotes');
   });
+
+  it('enables realtime replication for chat messages and watchlist changes', () => {
+    expect(migration).toContain('supabase_realtime');
+    expect(migration).toContain('alter publication supabase_realtime add table public.messages');
+    expect(migration).toContain(
+      'alter publication supabase_realtime add table public.room_watchlist'
+    );
+  });
 });

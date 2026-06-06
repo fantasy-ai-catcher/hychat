@@ -81,6 +81,33 @@ create index if not exists room_members_user_id_idx
 create index if not exists room_watchlist_symbol_idx
   on public.room_watchlist (canonical_symbol);
 
+do $$
+begin
+  if exists (
+    select 1 from pg_publication where pubname = 'supabase_realtime'
+  ) and not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'messages'
+  ) then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+
+  if exists (
+    select 1 from pg_publication where pubname = 'supabase_realtime'
+  ) and not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'room_watchlist'
+  ) then
+    alter publication supabase_realtime add table public.room_watchlist;
+  end if;
+end $$;
+
 grant usage on schema public to authenticated;
 grant select, insert, update on public.profiles to authenticated;
 grant select, insert, update on public.rooms to authenticated;
