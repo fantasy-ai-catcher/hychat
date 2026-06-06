@@ -23,7 +23,7 @@ type RoomMessageChange = {
   id: string;
   room_id: string;
   sender_id: string;
-  kind: string;
+  kind: 'text' | 'system';
   body: string;
   created_at: string;
 };
@@ -35,18 +35,8 @@ type WatchlistChange = {
   created_at?: string;
 };
 
-type RoomRealtimeChannel = {
-  on: (
-    event: 'postgres_changes',
-    filter: Record<string, unknown>,
-    callback: (payload: RealtimePayload<Record<string, unknown>>) => void
-  ) => RoomRealtimeChannel;
-  subscribe: (callback?: (status: string) => void) => unknown;
-  unsubscribe: () => unknown;
-};
-
 type SupabaseRealtimeClient = {
-  channel: (topic: string) => RoomRealtimeChannel;
+  channel: (topic: string) => any;
 };
 
 export type RoomRealtimeOptions = {
@@ -70,7 +60,8 @@ export function subscribeToRoomRealtime(
         table: 'messages',
         filter: `room_id=eq.${options.roomId}`
       },
-      (payload) => options.onMessage(payload.new as RoomMessageChange)
+      (payload: RealtimePayload<Record<string, unknown>>) =>
+        options.onMessage(payload.new as RoomMessageChange)
     )
     .on(
       'postgres_changes',
@@ -80,7 +71,8 @@ export function subscribeToRoomRealtime(
         table: 'room_watchlist',
         filter: `room_id=eq.${options.roomId}`
       },
-      (payload) => options.onWatchlistChange(payload.new as WatchlistChange)
+      (payload: RealtimePayload<Record<string, unknown>>) =>
+        options.onWatchlistChange(payload.new as WatchlistChange)
     );
 
   channel.subscribe(options.onStatus);

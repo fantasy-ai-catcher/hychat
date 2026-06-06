@@ -31,6 +31,43 @@ describe('UI state reducer', () => {
     expect(state.messagesByRoom['room-1']).toHaveLength(1);
   });
 
+  it('replaces messages when a room is reloaded', () => {
+    const initial = reducer(createInitialAppState(), {
+      type: 'message-received',
+      message: {
+        id: 'old-message',
+        roomId: 'room-1',
+        senderId: 'user-1',
+        body: 'old',
+        createdAt: '2026-06-06T08:00:00.000Z'
+      }
+    });
+
+    const state = reducer(initial, {
+      type: 'messages-loaded',
+      roomId: 'room-1',
+      messages: [
+        {
+          id: 'new-message',
+          roomId: 'room-1',
+          senderId: 'user-2',
+          body: 'new',
+          createdAt: '2026-06-06T08:01:00.000Z'
+        }
+      ]
+    });
+
+    expect(state.messagesByRoom['room-1']).toEqual([
+      {
+        id: 'new-message',
+        roomId: 'room-1',
+        senderId: 'user-2',
+        body: 'new',
+        createdAt: '2026-06-06T08:01:00.000Z'
+      }
+    ]);
+  });
+
   it('updates watchlist and quotes', () => {
     const state = reducer(
       reducer(createInitialAppState(), {

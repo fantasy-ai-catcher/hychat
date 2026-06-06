@@ -32,6 +32,7 @@ export type AppState = {
 export type AppAction =
   | { type: 'rooms-loaded'; rooms: RoomSummary[] }
   | { type: 'room-joined'; roomId: string }
+  | { type: 'messages-loaded'; roomId: string; messages: ChatMessage[] }
   | { type: 'message-received'; message: ChatMessage }
   | { type: 'watchlist-updated'; roomId: string; symbols: string[] }
   | { type: 'quotes-updated'; quotes: QuoteSummary[] }
@@ -53,6 +54,14 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, rooms: action.rooms };
     case 'room-joined':
       return { ...state, activeRoomId: action.roomId };
+    case 'messages-loaded':
+      return {
+        ...state,
+        messagesByRoom: {
+          ...state.messagesByRoom,
+          [action.roomId]: action.messages
+        }
+      };
     case 'message-received':
       return {
         ...state,

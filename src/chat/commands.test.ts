@@ -27,6 +27,18 @@ describe('parseChatInput', () => {
   it('parses account and help commands', () => {
     expect(parseChatInput('/login')).toEqual({ type: 'command', name: 'login' });
     expect(parseChatInput('/signup')).toEqual({ type: 'command', name: 'signup' });
+    expect(parseChatInput('/login me@example.com secret')).toEqual({
+      type: 'command',
+      name: 'login',
+      email: 'me@example.com',
+      password: 'secret'
+    });
+    expect(parseChatInput('/signup me@example.com secret')).toEqual({
+      type: 'command',
+      name: 'signup',
+      email: 'me@example.com',
+      password: 'secret'
+    });
     expect(parseChatInput('/logout')).toEqual({ type: 'command', name: 'logout' });
     expect(parseChatInput('/help')).toEqual({ type: 'command', name: 'help' });
     expect(parseChatInput('/quit')).toEqual({ type: 'command', name: 'quit' });

@@ -25,6 +25,13 @@ export type WatchlistRow = {
   created_at: string;
 };
 
+export type RoomMemberRow = {
+  room_id: string;
+  user_id: string;
+  role: 'owner' | 'member';
+  created_at: string;
+};
+
 export type SendTextMessageInput = {
   roomId: string;
   senderId: string;
@@ -41,17 +48,6 @@ type ErrorLike = {
   message: string;
 };
 
-type SupabaseQuery = {
-  select: (...args: unknown[]) => SupabaseQuery;
-  insert: (...args: unknown[]) => SupabaseQuery;
-  upsert: (...args: unknown[]) => SupabaseQuery;
-  delete: (...args: unknown[]) => SupabaseQuery;
-  eq: (...args: unknown[]) => SupabaseQuery;
-  order: (...args: unknown[]) => SupabaseQuery;
-  limit: (...args: unknown[]) => SupabaseQuery;
-  single?: () => Promise<{ data: unknown; error: ErrorLike | null }>;
-};
-
 type SupabaseLikeClient = {
   auth: {
     signInWithPassword: (credentials: {
@@ -65,16 +61,10 @@ type SupabaseLikeClient = {
     signOut: () => Promise<{ error: ErrorLike | null }>;
     getUser: () => Promise<{ data: { user: HychatUser | null }; error: ErrorLike | null }>;
   };
-  from: (table: string) => SupabaseQuery;
-  rpc: (name: string, args: Record<string, unknown>) => Promise<{
-    data: unknown;
-    error: ErrorLike | null;
-  }>;
+  from: (table: string) => any;
+  rpc: (name: string, args: Record<string, unknown>) => any;
   functions: {
-    invoke: (name: string, args: Record<string, unknown>) => Promise<{
-      data: unknown;
-      error: ErrorLike | null;
-    }>;
+    invoke: (name: string, args: Record<string, unknown>) => any;
   };
 };
 
@@ -134,6 +124,15 @@ export function createHychatService(supabase: SupabaseLikeClient) {
         target_email: email
       });
       return ensureData(result);
+    },
+
+    async listMembers(roomId: string): Promise<RoomMemberRow[]> {
+      const result = await supabase
+        .from('room_members')
+        .select('room_id,user_id,role,created_at')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
+      return ensureData<RoomMemberRow[]>(result);
     },
 
     async listRecentMessages(roomId: string, limit = 50): Promise<ChatMessageRow[]> {

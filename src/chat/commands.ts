@@ -17,8 +17,8 @@ export type ParsedChatInput =
   | HelpCommand
   | QuitCommand;
 
-type LoginCommand = { type: 'command'; name: 'login' };
-type SignupCommand = { type: 'command'; name: 'signup' };
+type LoginCommand = { type: 'command'; name: 'login'; email?: string; password?: string };
+type SignupCommand = { type: 'command'; name: 'signup'; email?: string; password?: string };
 type LogoutCommand = { type: 'command'; name: 'logout' };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
 type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
@@ -47,9 +47,9 @@ export function parseChatInput(input: string): ParsedChatInput {
 
   switch (command) {
     case '/login':
-      return { type: 'command', name: 'login' };
+      return parseCredentialCommand('login', args);
     case '/signup':
-      return { type: 'command', name: 'signup' };
+      return parseCredentialCommand('signup', args);
     case '/logout':
       return { type: 'command', name: 'logout' };
     case '/rooms':
@@ -93,6 +93,26 @@ export function parseChatInput(input: string): ParsedChatInput {
     default:
       return { type: 'error', message: `Unknown command: ${command}` };
   }
+}
+
+function parseCredentialCommand(
+  name: 'login' | 'signup',
+  args: string[]
+): LoginCommand | SignupCommand | { type: 'error'; message: string } {
+  if (args.length === 0) {
+    return { type: 'command', name };
+  }
+
+  if (args.length < 2) {
+    return { type: 'error', message: `Usage: /${name} <email> <password>` };
+  }
+
+  return {
+    type: 'command',
+    name,
+    email: args[0],
+    password: args.slice(1).join(' ')
+  };
 }
 
 function requireRest<T extends ParsedChatInput>(

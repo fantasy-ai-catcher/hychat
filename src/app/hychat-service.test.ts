@@ -154,4 +154,20 @@ describe('createHychatService', () => {
       ])
     );
   });
+
+  it('lists room members', async () => {
+    const { supabase, calls } = createMockSupabase();
+    const service = createHychatService(supabase);
+
+    await service.listMembers('room-1');
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'from', args: ['room_members'] },
+        { method: 'select', args: ['room_id,user_id,role,created_at'] },
+        { method: 'eq', args: ['room_id', 'room-1'] },
+        { method: 'order', args: ['created_at', { ascending: true }] }
+      ])
+    );
+  });
 });
