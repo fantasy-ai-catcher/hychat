@@ -1,0 +1,147 @@
+# HyChat User Setup TODO
+
+日期：2026-06-06
+
+这个文件列出需要你手动完成的事项。代码不会把 Supabase service role key 或股票 API key 放到 terminal client。
+
+## 1. 准备账号和工具
+
+1. 注册或登录 Supabase：https://supabase.com/
+2. 创建一个 Supabase project。
+3. 安装 Supabase CLI，并登录：
+
+```bash
+supabase login
+```
+
+4. 注册 Twelve Data 并创建 API key：https://twelvedata.com/
+
+## 2. 配置 Supabase 项目
+
+1. 在 Supabase Dashboard 的 Auth 设置里启用 Email/Password 登录。
+2. 在项目根目录连接远程 Supabase project：
+
+```bash
+supabase link --project-ref <your-project-ref>
+```
+
+3. 推送数据库 migration：
+
+```bash
+supabase db push
+```
+
+4. 部署股票报价 Edge Function：
+
+```bash
+supabase functions deploy get-stock-quotes
+```
+
+5. 写入 Edge Function secrets：
+
+```bash
+supabase secrets set TWELVE_DATA_API_KEY=<your-twelve-data-key> STOCK_QUOTE_CACHE_TTL_SECONDS=60
+```
+
+不要把 `SUPABASE_SERVICE_ROLE_KEY` 写入本地 `.env`。它只应该由 Supabase Edge Function 在服务端使用。
+
+## 3. 配置本地环境变量
+
+1. 复制 env 模板：
+
+```bash
+cp .env.example .env
+```
+
+2. 在 `.env` 中填写：
+
+```text
+SUPABASE_URL=https://<your-project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
+STOCK_PROVIDER=twelve_data
+STOCK_QUOTE_CACHE_TTL_SECONDS=60
+```
+
+`SUPABASE_PUBLISHABLE_KEY` 可在 Supabase Dashboard 的 Project Settings -> API Keys 中获取。旧项目如果只有 `anon` key，MVP 也可以临时填入 anon key。
+
+## 4. 本地运行
+
+```bash
+pnpm install
+pnpm test -- --run
+pnpm typecheck
+pnpm build
+pnpm dev
+```
+
+## 5. 手动验收流程
+
+打开两个 terminal，分别用两个邮箱注册：
+
+```text
+/signup
+```
+
+或直接：
+
+```text
+/signup me@example.com your-password
+```
+
+在第一个账号里创建房间：
+
+```text
+/create Friends
+```
+
+第二个账号先注册并登录一次，让 `profiles` 表有邮箱记录。然后第一个账号邀请第二个账号：
+
+```text
+/invite friend@example.com
+```
+
+第二个账号刷新房间并进入：
+
+```text
+/rooms
+/join Friends
+```
+
+聊天验收：
+
+```text
+hello from account one
+```
+
+股票验收：
+
+```text
+/watch add AAPL.US
+/watch add 0700.HK
+/watch add 600519.CN
+/refresh
+/stock TSLA.US
+```
+
+退出登录：
+
+```text
+/logout
+```
+
+## 6. 免费额度和清理
+
+股票数据只缓存最新报价，不保存历史行情。聊天消息会入库，migration 已提供清理函数：
+
+```sql
+select public.cleanup_old_messages(1000);
+select public.cleanup_orphan_stock_quotes();
+```
+
+如果你想自动清理，可以在 Supabase Dashboard 里创建 Cron job，定期执行上面两个 SQL 函数。MVP 默认每个房间保留最近 30 天或至少 5000 条消息，具体受 `rooms.message_retention_days` 和 `rooms.message_retention_min_count` 控制。
+
+## 7. 现有限制
+
+1. MVP 使用 Supabase Postgres Changes 做实时同步，Broadcast/Presence 和 typing 状态后续再升级。
+2. 股票 provider 当前默认 Twelve Data，但代码已有 provider/cache 抽象，后续可以切 Longbridge、Futu 或其他 API。
+3. terminal client 只使用 publishable/anon key，不应持有 service role key。

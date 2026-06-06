@@ -4,18 +4,17 @@ Node.js terminal chat MVP backed by Supabase. HyChat is designed for a small pri
 
 ## Current Scope
 
-Implemented foundations:
+Implemented MVP:
 
 1. TypeScript CLI project with Vitest.
 2. Runtime env validation.
-3. Terminal slash command parser.
+3. Interactive Ink terminal UI with slash commands.
 4. Canonical stock symbols such as `AAPL.US`, `0700.HK`, `600519.CN`.
 5. Supabase schema migration with RLS and explicit Data API grants.
-6. Supabase client repository helpers.
+6. Supabase Auth login/signup/logout with local session persistence.
 7. Stock quote Edge Function with current quote cache and Twelve Data adapter.
-8. Ink terminal UI shell and state reducer.
-
-The UI shell is intentionally minimal. Real Supabase auth/session prompts and live Realtime wiring are the next implementation step.
+8. Room creation, room join, email invite, member listing, message history, and realtime message/watchlist updates.
+9. Shared room watchlist and manual quote refresh.
 
 ## Requirements
 
@@ -44,7 +43,7 @@ STOCK_QUOTE_CACHE_TTL_SECONDS=60
 Edge Function secrets are configured in Supabase, not exposed to the terminal client:
 
 ```bash
-supabase secrets set TWELVE_DATA_API_KEY=...
+supabase secrets set TWELVE_DATA_API_KEY=... STOCK_QUOTE_CACHE_TTL_SECONDS=60
 ```
 
 Supabase automatically injects `SUPABASE_URL` and service credentials for deployed functions. Do not place a service role key in terminal client env files.
@@ -57,6 +56,29 @@ pnpm typecheck
 pnpm build
 pnpm dev
 ```
+
+## Terminal Commands
+
+```text
+/signup
+/signup <email> <password>
+/login
+/login <email> <password>
+/logout
+/create <room name>
+/rooms
+/join <room id|room name>
+/invite <email>
+/members
+/watch add <symbol>
+/watch remove <symbol>
+/stock <symbol>
+/refresh [symbol]
+/help
+/quit
+```
+
+When `/login` or `/signup` is entered without arguments, HyChat prompts for email and masked password.
 
 ## Supabase
 
@@ -106,11 +128,13 @@ The test suite includes:
 
 1. Env parsing.
 2. Command parsing.
-3. Symbol parsing and cache policy.
-4. Static Supabase SQL checks.
-5. Repository query construction.
-6. Edge quote resolver behavior.
-7. UI state reducer.
+3. Session persistence and chat session command execution.
+4. Symbol parsing and cache policy.
+5. Static Supabase SQL checks.
+6. Repository and service query construction.
+7. Edge quote resolver behavior.
+8. Realtime subscription wiring.
+9. UI state reducer and App composition.
 
 Run all:
 
