@@ -46,6 +46,13 @@ describe('initial Supabase schema migration', () => {
     expect(migration).toContain('public.room_members');
   });
 
+  it('supports creating rooms and inviting members by email', () => {
+    expect(migration).toContain('email text not null unique');
+    expect(migration).toContain('create or replace function public.invite_room_member_by_email');
+    expect(migration).toContain('grant execute on function public.invite_room_member_by_email');
+    expect(migration).toContain('room owners can add themselves');
+  });
+
   it('bounds message size and quote cache growth', () => {
     expect(migration).toContain('char_length(body) <= 2000');
     expect(migration).toContain('cache_expires_at timestamptz not null');

@@ -5,6 +5,7 @@ revoke all on schema private from public;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
   display_name text not null check (char_length(display_name) between 1 and 80),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -159,7 +160,10 @@ with check (id = (select auth.uid()));
 create policy "members can read rooms"
 on public.rooms for select
 to authenticated
-using (private.is_current_user_room_member(id));
+using (
+  owner_id = (select auth.uid())
+  or private.is_current_user_room_member(id)
+);
 
 create policy "users can create owned rooms"
 on public.rooms for insert
@@ -181,6 +185,20 @@ create policy "owners can add members"
 on public.room_members for insert
 to authenticated
 with check (private.is_current_user_room_owner(room_id));
+
+create policy "room owners can add themselves"
+on public.room_members for insert
+to authenticated
+with check (
+  user_id = (select auth.uid())
+  and role = 'owner'
+  and exists (
+    select 1
+    from public.rooms r
+    where r.id = room_id
+      and r.owner_id = (select auth.uid())
+  )
+);
 
 create policy "owners can remove members"
 on public.room_members for delete
@@ -232,6 +250,39 @@ using (
       and private.is_current_user_room_member(rw.room_id)
   )
 );
+
+create or replace function public.invite_room_member_by_email(target_room_id uuid, target_email text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_user_id uuid;
+begin
+  if not private.is_current_user_room_owner(target_room_id) then
+    raise exception 'not_room_owner';
+  end if;
+
+  select p.id
+  into target_user_id
+  from public.profiles p
+  where lower(p.email) = lower(target_email);
+
+  if target_user_id is null then
+    raise exception 'profile_not_found';
+  end if;
+
+  insert into public.room_members (room_id, user_id, role)
+  values (target_room_id, target_user_id, 'member')
+  on conflict (room_id, user_id) do update set role = excluded.role;
+
+  return target_user_id;
+end;
+$$;
+
+revoke all on function public.invite_room_member_by_email(uuid, text) from public;
+grant execute on function public.invite_room_member_by_email(uuid, text) to authenticated;
 
 create or replace function public.cleanup_old_messages(batch_size int default 1000)
 returns int

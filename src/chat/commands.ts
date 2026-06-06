@@ -3,8 +3,10 @@ export type ParsedChatInput =
   | { type: 'message'; body: string }
   | { type: 'error'; message: string }
   | LoginCommand
+  | SignupCommand
   | LogoutCommand
   | RoomsCommand
+  | CreateRoomCommand
   | JoinCommand
   | InviteCommand
   | MembersCommand
@@ -16,8 +18,10 @@ export type ParsedChatInput =
   | QuitCommand;
 
 type LoginCommand = { type: 'command'; name: 'login' };
+type SignupCommand = { type: 'command'; name: 'signup' };
 type LogoutCommand = { type: 'command'; name: 'logout' };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
+type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
 type JoinCommand = { type: 'command'; name: 'join'; room: string };
 type InviteCommand = { type: 'command'; name: 'invite'; email: string };
 type MembersCommand = { type: 'command'; name: 'members' };
@@ -44,6 +48,8 @@ export function parseChatInput(input: string): ParsedChatInput {
   switch (command) {
     case '/login':
       return { type: 'command', name: 'login' };
+    case '/signup':
+      return { type: 'command', name: 'signup' };
     case '/logout':
       return { type: 'command', name: 'logout' };
     case '/rooms':
@@ -59,6 +65,12 @@ export function parseChatInput(input: string): ParsedChatInput {
         type: 'command',
         name: 'join',
         room
+      }));
+    case '/create':
+      return requireRest(args, 'Usage: /create <room name>', (nameText) => ({
+        type: 'command',
+        name: 'create-room',
+        nameText
       }));
     case '/invite':
       return requireArgument(args[0], 'Usage: /invite <email>', (email) => ({
@@ -81,6 +93,15 @@ export function parseChatInput(input: string): ParsedChatInput {
     default:
       return { type: 'error', message: `Unknown command: ${command}` };
   }
+}
+
+function requireRest<T extends ParsedChatInput>(
+  args: string[],
+  message: string,
+  build: (value: string) => T
+): T | { type: 'error'; message: string } {
+  const value = args.join(' ').trim();
+  return value ? build(value) : { type: 'error', message };
 }
 
 function parseWatchCommand(args: string[]): ParsedChatInput {

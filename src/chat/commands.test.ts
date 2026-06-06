@@ -26,9 +26,18 @@ describe('parseChatInput', () => {
 
   it('parses account and help commands', () => {
     expect(parseChatInput('/login')).toEqual({ type: 'command', name: 'login' });
+    expect(parseChatInput('/signup')).toEqual({ type: 'command', name: 'signup' });
     expect(parseChatInput('/logout')).toEqual({ type: 'command', name: 'logout' });
     expect(parseChatInput('/help')).toEqual({ type: 'command', name: 'help' });
     expect(parseChatInput('/quit')).toEqual({ type: 'command', name: 'quit' });
+  });
+
+  it('parses room creation commands', () => {
+    expect(parseChatInput('/create Friends Room')).toEqual({
+      type: 'command',
+      name: 'create-room',
+      nameText: 'Friends Room'
+    });
   });
 
   it('parses invite commands', () => {
@@ -77,6 +86,10 @@ describe('parseChatInput', () => {
     expect(parseChatInput('/join')).toEqual({
       type: 'error',
       message: 'Usage: /join <room>'
+    });
+    expect(parseChatInput('/create')).toEqual({
+      type: 'error',
+      message: 'Usage: /create <room name>'
     });
     expect(parseChatInput('/watch add')).toEqual({
       type: 'error',
