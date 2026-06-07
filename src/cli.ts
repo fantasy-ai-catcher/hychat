@@ -1,6 +1,8 @@
-import 'dotenv/config';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import React from 'react';
+import { parse as parseDotenv } from 'dotenv';
 import { render } from 'ink';
 
 import { createHychatService } from './app/hychat-service.js';
@@ -12,6 +14,12 @@ import { App } from './ui/App.js';
 
 export type RunCliOptions = {
   argv: string[];
+};
+
+export type RuntimeDotenvOptions = {
+  cwd?: string;
+  homeDir?: string;
+  env?: Record<string, string | undefined>;
 };
 
 export function getCliName(): string {
@@ -59,6 +67,36 @@ export function createDoctorReport(
   return { ok: false, lines };
 }
 
+export function loadRuntimeDotenv(options: RuntimeDotenvOptions = {}): string[] {
+  const env = options.env ?? process.env;
+  const originalKeys = new Set(
+    Object.entries(env)
+      .filter(([, value]) => value !== undefined)
+      .map(([key]) => key)
+  );
+  const files = [
+    join(options.homeDir ?? homedir(), '.config', 'hychat', '.env'),
+    join(options.cwd ?? process.cwd(), '.env')
+  ];
+  const loaded: string[] = [];
+
+  for (const file of files) {
+    if (!existsSync(file)) {
+      continue;
+    }
+
+    const values = parseDotenv(readFileSync(file, 'utf8'));
+    for (const [key, value] of Object.entries(values)) {
+      if (!originalKeys.has(key)) {
+        env[key] = value;
+      }
+    }
+    loaded.push(file);
+  }
+
+  return loaded;
+}
+
 export async function runCli(options: RunCliOptions): Promise<void> {
   const args = options.argv.slice(2);
 
@@ -68,6 +106,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   }
 
   if (args[0] === 'doctor') {
+    loadRuntimeDotenv();
     const report = createDoctorReport();
     for (const line of report.lines) {
       console.log(line);
@@ -77,6 +116,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   }
 
   try {
+    loadRuntimeDotenv();
     const config = loadEnv();
     const supabase = createHychatSupabaseClient(config, {
       authStorage: new JsonFileStorage(getDefaultSessionPath())
