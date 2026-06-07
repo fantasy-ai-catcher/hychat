@@ -1,11 +1,12 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { render } from 'ink';
 
 import { createHychatService } from './app/hychat-service.js';
 import { createRealtimeAdapter } from './app/realtime-adapter.js';
 import { getDefaultSessionPath, JsonFileStorage } from './app/session-storage.js';
-import { loadEnv } from './config/env.js';
+import { loadEnv, parseEnv } from './config/env.js';
 import { createHychatSupabaseClient } from './supabase/client.js';
 import { App } from './ui/App.js';
 
@@ -17,7 +18,54 @@ export function getCliName(): string {
   return 'hychat';
 }
 
-export async function runCli(_options: RunCliOptions): Promise<void> {
+export function getCliVersion(): string {
+  const packageJson = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+  ) as { version: string };
+  return packageJson.version;
+}
+
+export type DoctorReport = {
+  ok: boolean;
+  lines: string[];
+};
+
+export function createDoctorReport(
+  env: Record<string, string | undefined> = process.env
+): DoctorReport {
+  const lines = [`${getCliName()} ${getCliVersion()}`];
+  const parsed = parseEnv(env);
+
+  if (parsed.success) {
+    lines.push('Runtime env: ok');
+    lines.push(`Supabase URL: ${parsed.value.supabaseUrl}`);
+    lines.push(`Stock provider: ${parsed.value.stockProvider}`);
+    lines.push(`Quote cache TTL: ${parsed.value.stockQuoteCacheTtlSeconds}s`);
+    return { ok: true, lines };
+  }
+
+  lines.push('Runtime env: missing or invalid');
+  lines.push(...parsed.errors);
+  return { ok: false, lines };
+}
+
+export async function runCli(options: RunCliOptions): Promise<void> {
+  const args = options.argv.slice(2);
+
+  if (args.includes('--version') || args.includes('-V')) {
+    console.log(getCliVersion());
+    return;
+  }
+
+  if (args[0] === 'doctor') {
+    const report = createDoctorReport();
+    for (const line of report.lines) {
+      console.log(line);
+    }
+    process.exitCode = report.ok ? 0 : 1;
+    return;
+  }
+
   try {
     const config = loadEnv();
     const supabase = createHychatSupabaseClient(config, {
