@@ -1,0 +1,18 @@
+class Hychat < Formula
+  desc "Terminal chat with Supabase-backed rooms and stock quotes"
+  homepage "https://github.com/{{GITHUB_REPOSITORY}}"
+  url "{{TARBALL_URL}}"
+  sha256 "{{SHA256}}"
+  license "{{LICENSE}}"
+
+  depends_on "node"
+
+  def install
+    system "npm", "install", *std_npm_args
+    bin.install_symlink libexec.glob("bin/*")
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/hychat --version")
+  end
+end

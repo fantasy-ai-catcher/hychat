@@ -19,10 +19,20 @@ export function getCliName(): string {
 }
 
 export function getCliVersion(): string {
-  const packageJson = JSON.parse(
-    readFileSync(new URL('../package.json', import.meta.url), 'utf8')
-  ) as { version: string };
-  return packageJson.version;
+  for (const path of ['../package.json', '../../package.json']) {
+    try {
+      const packageJson = JSON.parse(
+        readFileSync(new URL(path, import.meta.url), 'utf8')
+      ) as { version: string };
+      return packageJson.version;
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Unable to locate package.json for version output.');
 }
 
 export type DoctorReport = {
@@ -80,4 +90,13 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     console.error(message);
     process.exitCode = 1;
   }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: unknown }).code === 'ENOENT'
+  );
 }
