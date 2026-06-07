@@ -47,13 +47,26 @@ supabase secrets set TWELVE_DATA_API_KEY=<your-twelve-data-key> STOCK_QUOTE_CACH
 
 ## 3. 配置本地环境变量
 
-1. 复制 env 模板：
+HyChat 会按以下优先级读取配置：
+
+1. shell 已设置的环境变量。
+2. 当前目录 `.env`。
+3. `~/.config/hychat/.env`。
+
+开发时可以复制 env 模板：
 
 ```bash
 cp .env.example .env
 ```
 
-2. 在 `.env` 中填写：
+Homebrew 安装后建议使用用户配置目录：
+
+```bash
+mkdir -p ~/.config/hychat
+cp .env.example ~/.config/hychat/.env
+```
+
+在 `.env` 或 `~/.config/hychat/.env` 中填写：
 
 ```text
 SUPABASE_URL=https://<your-project-ref>.supabase.co
@@ -145,3 +158,4 @@ select public.cleanup_orphan_stock_quotes();
 1. MVP 使用 Supabase Postgres Changes 做实时同步，Broadcast/Presence 和 typing 状态后续再升级。
 2. 股票 provider 当前默认 Twelve Data，但代码已有 provider/cache 抽象，后续可以切 Longbridge、Futu 或其他 API。
 3. terminal client 只使用 publishable/anon key，不应持有 service role key。
+4. Homebrew 分发和 tap 发布步骤见 `todo/HOMEBREW_DISTRIBUTION.md`。
