@@ -72,6 +72,10 @@ export function createHychatService(supabase: SupabaseLikeClient) {
   return {
     async getCurrentUser(): Promise<HychatUser | null> {
       const result = await supabase.auth.getUser();
+      if (isMissingAuthSessionError(result.error)) {
+        return null;
+      }
+
       ensureNoError(result.error);
       return result.data.user;
     },
@@ -230,4 +234,8 @@ function ensureNoError(error: ErrorLike | null): void {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+function isMissingAuthSessionError(error: ErrorLike | null): boolean {
+  return error?.message.toLowerCase().includes('auth session missing') ?? false;
 }

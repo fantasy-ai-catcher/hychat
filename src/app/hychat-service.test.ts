@@ -60,7 +60,10 @@ function createMockSupabase() {
           calls.push({ method: 'signOut', args: [] });
           return { error: null };
         },
-        async getUser() {
+        async getUser(): Promise<{
+          data: { user: typeof user | null };
+          error: { message: string } | null;
+        }> {
           calls.push({ method: 'getUser', args: [] });
           return { data: { user }, error: null };
         }
@@ -84,6 +87,17 @@ function createMockSupabase() {
 }
 
 describe('createHychatService', () => {
+  it('treats a missing auth session as a signed-out user', async () => {
+    const { supabase } = createMockSupabase();
+    supabase.auth.getUser = async () => ({
+      data: { user: null },
+      error: { message: 'Auth session missing!' }
+    });
+    const service = createHychatService(supabase);
+
+    await expect(service.getCurrentUser()).resolves.toBeNull();
+  });
+
   it('signs in and upserts the user profile', async () => {
     const { supabase, calls } = createMockSupabase();
     const service = createHychatService(supabase);
