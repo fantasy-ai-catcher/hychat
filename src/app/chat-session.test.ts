@@ -4,7 +4,7 @@ import { createChatSession } from './chat-session.js';
 
 function createService() {
   const calls: Array<{ method: string; args: unknown[] }> = [];
-  const user = { id: 'user-1', email: 'me@example.com' };
+  const user = { id: 'user-1', displayName: 'liudong', role: 'admin' as const, status: 'active' as const };
   const room = { id: 'room-1', name: 'Friends' };
 
   return {
@@ -14,16 +14,16 @@ function createService() {
         calls.push({ method: 'getCurrentUser', args: [] });
         return null;
       },
-      async signIn(email: string, password: string) {
-        calls.push({ method: 'signIn', args: [email, password] });
-        return user;
-      },
-      async signUp(email: string, password: string) {
-        calls.push({ method: 'signUp', args: [email, password] });
+      async startProfile(displayName: string, inviteCode?: string) {
+        calls.push({ method: 'startProfile', args: [displayName, inviteCode] });
         return user;
       },
       async signOut() {
         calls.push({ method: 'signOut', args: [] });
+      },
+      async createInviteCode() {
+        calls.push({ method: 'createInviteCode', args: [] });
+        return 'invite123';
       },
       async listRooms() {
         calls.push({ method: 'listRooms', args: [] });
@@ -33,8 +33,8 @@ function createService() {
         calls.push({ method: 'createRoom', args: [name, userId] });
         return room;
       },
-      async inviteMember(roomId: string, email: string) {
-        calls.push({ method: 'inviteMember', args: [roomId, email] });
+      async inviteMember(roomId: string, displayName: string) {
+        calls.push({ method: 'inviteMember', args: [roomId, displayName] });
       },
       async listRecentMessages(roomId: string) {
         calls.push({ method: 'listRecentMessages', args: [roomId] });
@@ -43,6 +43,7 @@ function createService() {
             id: 'message-1',
             room_id: roomId,
             sender_id: 'user-1',
+            sender_display_name: 'liudong',
             kind: 'text' as const,
             body: 'hello',
             created_at: '2026-06-06T08:00:00.000Z'
@@ -81,18 +82,37 @@ function createService() {
 }
 
 describe('createChatSession', () => {
-  it('logs in with command credentials and loads rooms', async () => {
+  it('starts an anonymous profile with the default nickname and loads rooms', async () => {
     const { service, calls } = createService();
-    const session = createChatSession({ service });
+    const session = createChatSession({ service, defaultDisplayName: 'liudong' });
 
-    const snapshot = await session.handleLine('/login me@example.com secret');
+    const snapshot = await session.handleLine('/start');
 
     expect(snapshot.user?.id).toBe('user-1');
+    expect(snapshot.user?.displayName).toBe('liudong');
     expect(snapshot.state.rooms).toEqual([{ id: 'room-1', name: 'Friends' }]);
     expect(calls).toEqual(
       expect.arrayContaining([
-        { method: 'signIn', args: ['me@example.com', 'secret'] },
+        { method: 'startProfile', args: ['liudong', undefined] },
         { method: 'listRooms', args: [] }
+      ])
+    );
+  });
+
+  it('starts with an invite code and can create an invite code as admin', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    let snapshot = await session.handleLine('/start alice invite123');
+    expect(snapshot.statusText).toBe('Started as liudong (admin).');
+
+    snapshot = await session.handleLine('/invite-code');
+
+    expect(snapshot.statusText).toBe('Invite code: invite123');
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'startProfile', args: ['alice', 'invite123'] },
+        { method: 'createInviteCode', args: [] }
       ])
     );
   });
@@ -101,7 +121,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/login me@example.com secret');
+    await session.handleLine('/start liudong');
     let snapshot = await session.handleLine('/create Friends');
     expect(snapshot.state.activeRoomId).toBe('room-1');
 
@@ -113,6 +133,7 @@ describe('createChatSession', () => {
 
     await session.handleLine('hello from terminal');
 
+    expect(snapshot.state.messagesByRoom['room-1']?.[0]?.senderName).toBe('liudong');
     expect(calls).toEqual(
       expect.arrayContaining([
         { method: 'createRoom', args: ['Friends', 'user-1'] },
@@ -135,7 +156,7 @@ describe('createChatSession', () => {
     };
     const session = createChatSession({ service, realtime });
 
-    await session.handleLine('/login me@example.com secret');
+    await session.handleLine('/start liudong');
     await session.handleLine('/join Friends');
 
     expect(realtime.subscribeToRoom).toHaveBeenCalledWith(

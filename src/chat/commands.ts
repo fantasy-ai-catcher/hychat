@@ -2,13 +2,13 @@ export type ParsedChatInput =
   | { type: 'empty' }
   | { type: 'message'; body: string }
   | { type: 'error'; message: string }
-  | LoginCommand
-  | SignupCommand
+  | StartCommand
   | LogoutCommand
   | RoomsCommand
   | CreateRoomCommand
   | JoinCommand
   | InviteCommand
+  | InviteCodeCommand
   | MembersCommand
   | WatchAddCommand
   | WatchRemoveCommand
@@ -17,13 +17,18 @@ export type ParsedChatInput =
   | HelpCommand
   | QuitCommand;
 
-type LoginCommand = { type: 'command'; name: 'login'; email?: string; password?: string };
-type SignupCommand = { type: 'command'; name: 'signup'; email?: string; password?: string };
+type StartCommand = {
+  type: 'command';
+  name: 'start';
+  displayName?: string;
+  inviteCode?: string;
+};
 type LogoutCommand = { type: 'command'; name: 'logout' };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
 type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
 type JoinCommand = { type: 'command'; name: 'join'; room: string };
-type InviteCommand = { type: 'command'; name: 'invite'; email: string };
+type InviteCommand = { type: 'command'; name: 'invite'; displayName: string };
+type InviteCodeCommand = { type: 'command'; name: 'invite-code' };
 type MembersCommand = { type: 'command'; name: 'members' };
 type WatchAddCommand = { type: 'command'; name: 'watch-add'; symbol: string };
 type WatchRemoveCommand = { type: 'command'; name: 'watch-remove'; symbol: string };
@@ -46,10 +51,8 @@ export function parseChatInput(input: string): ParsedChatInput {
   const [command, ...args] = trimmed.split(/\s+/);
 
   switch (command) {
-    case '/login':
-      return parseCredentialCommand('login', args);
-    case '/signup':
-      return parseCredentialCommand('signup', args);
+    case '/start':
+      return parseStartCommand(args);
     case '/logout':
       return { type: 'command', name: 'logout' };
     case '/rooms':
@@ -60,6 +63,8 @@ export function parseChatInput(input: string): ParsedChatInput {
       return { type: 'command', name: 'help' };
     case '/quit':
       return { type: 'command', name: 'quit' };
+    case '/invite-code':
+      return { type: 'command', name: 'invite-code' };
     case '/join':
       return requireArgument(args[0], 'Usage: /join <room>', (room) => ({
         type: 'command',
@@ -73,10 +78,10 @@ export function parseChatInput(input: string): ParsedChatInput {
         nameText
       }));
     case '/invite':
-      return requireArgument(args[0], 'Usage: /invite <email>', (email) => ({
+      return requireArgument(args[0], 'Usage: /invite <nickname>', (displayName) => ({
         type: 'command',
         name: 'invite',
-        email
+        displayName
       }));
     case '/watch':
       return parseWatchCommand(args);
@@ -95,23 +100,20 @@ export function parseChatInput(input: string): ParsedChatInput {
   }
 }
 
-function parseCredentialCommand(
-  name: 'login' | 'signup',
-  args: string[]
-): LoginCommand | SignupCommand | { type: 'error'; message: string } {
+function parseStartCommand(args: string[]): StartCommand | { type: 'error'; message: string } {
   if (args.length === 0) {
-    return { type: 'command', name };
+    return { type: 'command', name: 'start' };
   }
 
-  if (args.length < 2) {
-    return { type: 'error', message: `Usage: /${name} <email> <password>` };
+  if (args.length > 2) {
+    return { type: 'error', message: 'Usage: /start [nickname] [invite-code]' };
   }
 
   return {
     type: 'command',
-    name,
-    email: args[0],
-    password: args.slice(1).join(' ')
+    name: 'start',
+    displayName: args[0],
+    inviteCode: args[1]
   };
 }
 

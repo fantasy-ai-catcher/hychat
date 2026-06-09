@@ -4,7 +4,13 @@ import { createHychatService } from './hychat-service.js';
 
 function createMockSupabase() {
   const calls: Array<{ method: string; args: unknown[] }> = [];
-  const user = { id: 'user-1', email: 'me@example.com' };
+  const user = { id: 'user-1' };
+  const profile = {
+    id: 'user-1',
+    display_name: 'liudong',
+    role: 'admin',
+    status: 'active'
+  };
 
   const query = {
     select(...args: unknown[]) {
@@ -35,6 +41,10 @@ function createMockSupabase() {
       calls.push({ method: 'limit', args });
       return query;
     },
+    maybeSingle() {
+      calls.push({ method: 'maybeSingle', args: [] });
+      return Promise.resolve({ data: profile, error: null });
+    },
     single() {
       calls.push({ method: 'single', args: [] });
       return Promise.resolve({ data: { id: 'room-1', name: 'Friends' }, error: null });
@@ -48,12 +58,8 @@ function createMockSupabase() {
     calls,
     supabase: {
       auth: {
-        async signInWithPassword(args: unknown) {
-          calls.push({ method: 'signInWithPassword', args: [args] });
-          return { data: { user }, error: null };
-        },
-        async signUp(args: unknown) {
-          calls.push({ method: 'signUp', args: [args] });
+        async signInAnonymously(args?: unknown) {
+          calls.push({ method: 'signInAnonymously', args: args ? [args] : [] });
           return { data: { user }, error: null };
         },
         async signOut() {
@@ -74,6 +80,12 @@ function createMockSupabase() {
       },
       rpc(name: string, args: unknown) {
         calls.push({ method: 'rpc', args: [name, args] });
+        if (name === 'start_profile') {
+          return Promise.resolve({ data: profile, error: null });
+        }
+        if (name === 'create_invite_code') {
+          return Promise.resolve({ data: 'invite123', error: null });
+        }
         return Promise.resolve({ data: 'user-2', error: null });
       },
       functions: {
@@ -98,27 +110,29 @@ describe('createHychatService', () => {
     await expect(service.getCurrentUser()).resolves.toBeNull();
   });
 
-  it('signs in and upserts the user profile', async () => {
+  it('starts an anonymous profile through the invite-aware RPC', async () => {
     const { supabase, calls } = createMockSupabase();
+    supabase.auth.getUser = async () => ({
+      data: { user: null },
+      error: { message: 'Auth session missing!' }
+    });
     const service = createHychatService(supabase);
 
-    await service.signIn('me@example.com', 'secret');
+    await expect(service.startProfile('liudong', 'invite123')).resolves.toEqual({
+      id: 'user-1',
+      displayName: 'liudong',
+      role: 'admin',
+      status: 'active'
+    });
 
     expect(calls).toEqual(
       expect.arrayContaining([
+        { method: 'signInAnonymously', args: [] },
         {
-          method: 'signInWithPassword',
-          args: [{ email: 'me@example.com', password: 'secret' }]
-        },
-        { method: 'from', args: ['profiles'] },
-        {
-          method: 'upsert',
+          method: 'rpc',
           args: [
-            {
-              id: 'user-1',
-              email: 'me@example.com',
-              display_name: 'me'
-            }
+            'start_profile',
+            { target_display_name: 'liudong', invite_code: 'invite123' }
           ]
         }
       ])
@@ -145,11 +159,12 @@ describe('createHychatService', () => {
     );
   });
 
-  it('invites by email and invokes the quote function', async () => {
+  it('creates invite codes, invites by nickname, and invokes the quote function', async () => {
     const { supabase, calls } = createMockSupabase();
     const service = createHychatService(supabase);
 
-    await service.inviteMember('room-1', 'friend@example.com');
+    await service.createInviteCode();
+    await service.inviteMember('room-1', 'alice');
     await service.getQuotes(['AAPL.US'], false);
 
     expect(calls).toEqual(
@@ -157,8 +172,15 @@ describe('createHychatService', () => {
         {
           method: 'rpc',
           args: [
-            'invite_room_member_by_email',
-            { target_room_id: 'room-1', target_email: 'friend@example.com' }
+            'create_invite_code',
+            {}
+          ]
+        },
+        {
+          method: 'rpc',
+          args: [
+            'invite_room_member_by_display_name',
+            { target_room_id: 'room-1', target_display_name: 'alice' }
           ]
         },
         {

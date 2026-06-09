@@ -28,18 +28,19 @@ type QuoteApiResult = {
 type MemberRow = {
   room_id: string;
   user_id: string;
+  display_name?: string;
   role: string;
   created_at?: string;
 };
 
 type ChatServiceLike = {
   getCurrentUser: () => Promise<HychatUser | null>;
-  signIn: (email: string, password: string) => Promise<HychatUser>;
-  signUp: (email: string, password: string) => Promise<HychatUser>;
+  startProfile: (displayName: string, inviteCode?: string) => Promise<HychatUser>;
   signOut: () => Promise<void>;
+  createInviteCode: () => Promise<string>;
   listRooms: () => Promise<ServiceRoomSummary[]>;
   createRoom: (name: string, userId: string) => Promise<ServiceRoomSummary>;
-  inviteMember: (roomId: string, email: string) => Promise<unknown>;
+  inviteMember: (roomId: string, displayName: string) => Promise<unknown>;
   listMembers?: (roomId: string) => Promise<MemberRow[]>;
   listRecentMessages: (roomId: string) => Promise<ChatMessageRow[]>;
   sendTextMessage: (input: { roomId: string; senderId: string; body: string }) => Promise<void>;
@@ -75,15 +76,16 @@ export type ChatSessionSnapshot = {
 export type CreateChatSessionOptions = {
   service: ChatServiceLike;
   realtime?: RealtimeLike;
+  defaultDisplayName?: string;
 };
 
 const helpLines = [
-  '/signup <email> <password>',
-  '/login <email> <password>',
+  '/start [nickname] [invite-code]',
   '/create <room name>',
   '/rooms',
   '/join <room id|room name>',
-  '/invite <email>',
+  '/invite <nickname>',
+  '/invite-code',
   '/members',
   '/watch add <symbol>',
   '/watch remove <symbol>',
@@ -96,7 +98,7 @@ const helpLines = [
 export function createChatSession(options: CreateChatSessionOptions) {
   let state = createInitialAppState();
   let user: HychatUser | null = null;
-  let statusText = 'Use /login or /signup to start.';
+  let statusText = getSignedOutStatus(options.defaultDisplayName);
   let shouldExit = false;
   let subscription: RoomSubscription | undefined;
 
@@ -165,7 +167,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
   function requireUser(): HychatUser {
     if (!user) {
-      throw new Error('Please /login or /signup first.');
+      throw new Error('Please /start first.');
     }
 
     return user;
@@ -181,20 +183,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
   async function handleCommand(command: Exclude<ParsedChatInput, { type: 'message' | 'empty' | 'error' }>) {
     switch (command.name) {
-      case 'login':
-      case 'signup': {
-        if (!command.email || !command.password) {
-          statusText = `Enter ${command.name} credentials in the prompt.`;
+      case 'start': {
+        const displayName = command.displayName ?? options.defaultDisplayName;
+        if (!displayName) {
+          statusText = 'Usage: /start <nickname> [invite-code]';
           return;
         }
 
-        user =
-          command.name === 'login'
-            ? await options.service.signIn(command.email, command.password)
-            : await options.service.signUp(command.email, command.password);
+        user = await options.service.startProfile(displayName, command.inviteCode);
         await loadRooms();
         apply({ type: 'connection-changed', status: 'connected' });
-        statusText = `${command.name === 'login' ? 'Signed in' : 'Signed up'} as ${user.email ?? user.id}.`;
+        statusText = `Started as ${user.displayName} (${user.role}).`;
         return;
       }
 
@@ -206,6 +205,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
         state = createInitialAppState();
         statusText = 'Signed out.';
         return;
+
+      case 'invite-code': {
+        requireUser();
+        const code = await options.service.createInviteCode();
+        statusText = `Invite code: ${code}`;
+        return;
+      }
 
       case 'rooms':
         requireUser();
@@ -233,8 +239,8 @@ export function createChatSession(options: CreateChatSessionOptions) {
       case 'invite': {
         requireUser();
         const roomId = requireActiveRoom();
-        await options.service.inviteMember(roomId, command.email);
-        statusText = `Invited ${command.email}.`;
+        await options.service.inviteMember(roomId, command.displayName);
+        statusText = `Invited ${command.displayName}.`;
         return;
       }
 
@@ -247,7 +253,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
         statusText =
           members.length > 0
             ? members.map((member) => `${member.role}:${member.user_id}`).join(' ')
-            : 'Members can be invited with /invite <email>.';
+            : 'Members can be invited with /invite <nickname>.';
         return;
       }
 
@@ -319,7 +325,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
       if (user) {
         await loadRooms();
         apply({ type: 'connection-changed', status: 'connected' });
-        statusText = `Signed in as ${user.email ?? user.id}.`;
+        statusText = `Signed in as ${user.displayName}.`;
       }
 
       return snapshot();
@@ -369,6 +375,7 @@ function toChatMessage(message: ChatMessageRow): ChatMessage {
     id: message.id,
     roomId: message.room_id,
     senderId: message.sender_id,
+    senderName: message.sender_display_name ?? message.sender_id,
     body: message.body,
     createdAt: message.created_at
   };
@@ -381,6 +388,12 @@ function toQuoteSummary(quote: NonNullable<QuoteApiResult['quotes']>[number]): Q
     changePercent: quote.changePercent,
     cacheStatus: quote.cacheStatus ?? 'refreshed'
   };
+}
+
+function getSignedOutStatus(defaultDisplayName: string | undefined): string {
+  return defaultDisplayName
+    ? `Use /start to start as ${defaultDisplayName}, or /start <nickname> <invite-code>.`
+    : 'Use /start <nickname> [invite-code] to start.';
 }
 
 function normalizeSymbol(input: string): string {

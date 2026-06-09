@@ -41,7 +41,7 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 ## 5. 核心假设
 
 1. 用户规模是小群体，初始目标为 1-3 个房间、每个房间 2-10 人。
-2. 登录方式优先使用 Supabase Auth 的 email/password，便于 terminal 内输入。
+2. 用户入口使用昵称 + 邀请码，底层使用 Supabase Anonymous Auth 和 RLS 管理身份。
 3. 股票数据源第一版默认使用 Twelve Data，通过可替换的 Stock Provider adapter 接入。
 4. 股票查询第一版覆盖美股、港股和 A 股，内部使用统一 symbol 规范隔离不同 API 的代码格式。
 5. 股票报价可接受延迟缓存，默认刷新间隔为 60-300 秒，具体取决于外部 API 限额。
@@ -56,15 +56,15 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 
 功能点：
 
-1. 使用邮箱和密码登录。
-2. 首次登录前需要通过 Supabase Auth 创建账号。
-3. 本地保存 Supabase session，避免每次启动都重新登录。
+1. 使用 `/start [nickname] [invite-code]` 激活昵称 profile。
+2. 底层通过 Supabase Anonymous Auth 创建匿名用户，不要求 email/password。
+3. 本地保存 Supabase session，避免每次启动都重新激活。
 4. 支持退出登录并清除本地 session。
 
 验收标准：
 
-1. 未登录用户启动应用时进入登录流程。
-2. 登录成功后能看到自己可访问的房间列表。
+1. 未激活用户启动应用时看到 `/start` 引导。
+2. 激活成功后能看到自己可访问的房间列表。
 3. 退出登录后无法读取任何房间消息。
 
 ### 6.2 房间列表和进入房间
@@ -196,11 +196,12 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 MVP 命令：
 
 ```text
-/login
+/start [nickname] [invite-code]
 /logout
 /rooms
 /join <room>
-/invite <email>
+/invite <nickname>
+/invite-code
 /members
 /watch add <symbol>
 /watch remove <symbol>

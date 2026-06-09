@@ -18,7 +18,7 @@ supabase login
 
 ## 2. 配置 Supabase 项目
 
-1. 在 Supabase Dashboard 的 Auth 设置里启用 Email/Password 登录。
+1. 在 Supabase Dashboard 的 Auth 设置里启用 Anonymous Sign-Ins。
 2. 在项目根目录连接远程 Supabase project：
 
 ```bash
@@ -77,6 +77,8 @@ STOCK_QUOTE_CACHE_TTL_SECONDS=60
 
 `SUPABASE_PUBLISHABLE_KEY` 可在 Supabase Dashboard 的 Project Settings -> API Keys 中获取。旧项目如果只有 `anon` key，MVP 也可以临时填入 anon key。
 
+普通 HyChat 用户不需要 email/password。客户端会使用 Supabase Anonymous Auth 创建匿名用户，并用 `profiles.display_name` 作为聊天昵称。
+
 ## 4. 本地运行
 
 ```bash
@@ -89,31 +91,45 @@ pnpm dev
 
 ## 5. 手动验收流程
 
-打开两个 terminal，分别用两个邮箱注册：
+打开第一个 terminal，初始化你自己的 profile。直接 `/start` 会使用本机用户名，例如 `/Users/liudong` 会默认用 `liudong`：
 
 ```text
-/signup
+/start
 ```
 
-或直接：
+也可以显式指定昵称：
 
 ```text
-/signup me@example.com your-password
+/start liudong
 ```
 
-在第一个账号里创建房间：
+首次激活的 profile 会成为 admin。然后创建房间：
+
+如果你之前已经用旧版本注册过测试用户，新 migration 会把最早的 active profile 提升为 admin，避免没有人能生成邀请码。
 
 ```text
 /create Friends
 ```
 
-第二个账号先注册并登录一次，让 `profiles` 表有邮箱记录。然后第一个账号邀请第二个账号：
+生成一个给朋友用的邀请码：
 
 ```text
-/invite friend@example.com
+/invite-code
 ```
 
-第二个账号刷新房间并进入：
+打开第二个 terminal，朋友使用昵称和邀请码激活：
+
+```text
+/start alice <invite-code>
+```
+
+第一个 terminal 用朋友昵称把朋友加入房间：
+
+```text
+/invite alice
+```
+
+第二个 terminal 刷新房间并进入：
 
 ```text
 /rooms

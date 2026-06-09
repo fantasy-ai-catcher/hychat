@@ -25,20 +25,19 @@ describe('parseChatInput', () => {
   });
 
   it('parses account and help commands', () => {
-    expect(parseChatInput('/login')).toEqual({ type: 'command', name: 'login' });
-    expect(parseChatInput('/signup')).toEqual({ type: 'command', name: 'signup' });
-    expect(parseChatInput('/login me@example.com secret')).toEqual({
+    expect(parseChatInput('/start')).toEqual({ type: 'command', name: 'start' });
+    expect(parseChatInput('/start liudong')).toEqual({
       type: 'command',
-      name: 'login',
-      email: 'me@example.com',
-      password: 'secret'
+      name: 'start',
+      displayName: 'liudong'
     });
-    expect(parseChatInput('/signup me@example.com secret')).toEqual({
+    expect(parseChatInput('/start alice invite123')).toEqual({
       type: 'command',
-      name: 'signup',
-      email: 'me@example.com',
-      password: 'secret'
+      name: 'start',
+      displayName: 'alice',
+      inviteCode: 'invite123'
     });
+    expect(parseChatInput('/invite-code')).toEqual({ type: 'command', name: 'invite-code' });
     expect(parseChatInput('/logout')).toEqual({ type: 'command', name: 'logout' });
     expect(parseChatInput('/help')).toEqual({ type: 'command', name: 'help' });
     expect(parseChatInput('/quit')).toEqual({ type: 'command', name: 'quit' });
@@ -53,10 +52,10 @@ describe('parseChatInput', () => {
   });
 
   it('parses invite commands', () => {
-    expect(parseChatInput('/invite friend@example.com')).toEqual({
+    expect(parseChatInput('/invite alice')).toEqual({
       type: 'command',
       name: 'invite',
-      email: 'friend@example.com'
+      displayName: 'alice'
     });
   });
 

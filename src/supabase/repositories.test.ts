@@ -79,7 +79,10 @@ describe('message repository', () => {
 
     expect(calls).toEqual([
       { method: 'from', args: ['messages'] },
-      { method: 'select', args: ['id,room_id,sender_id,kind,body,metadata,created_at'] },
+      {
+        method: 'select',
+        args: ['id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at']
+      },
       { method: 'eq', args: ['room_id', 'room-1'] },
       { method: 'order', args: ['created_at', { ascending: false }] },
       { method: 'limit', args: [25] }

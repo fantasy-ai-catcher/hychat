@@ -1,10 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const migration = readFileSync(
-  'supabase/migrations/20260606000000_initial_schema.sql',
-  'utf8'
-).toLowerCase();
+const migration = readdirSync('supabase/migrations')
+  .filter((file) => file.endsWith('.sql'))
+  .sort()
+  .map((file) => readFileSync(`supabase/migrations/${file}`, 'utf8'))
+  .join('\n')
+  .toLowerCase();
 
 describe('initial Supabase schema migration', () => {
   it('creates the core chat and stock tables', () => {
@@ -13,6 +15,7 @@ describe('initial Supabase schema migration', () => {
       'rooms',
       'room_members',
       'messages',
+      'invite_codes',
       'room_watchlist',
       'stock_quotes'
     ]) {
@@ -46,10 +49,15 @@ describe('initial Supabase schema migration', () => {
     expect(migration).toContain('public.room_members');
   });
 
-  it('supports creating rooms and inviting members by email', () => {
-    expect(migration).toContain('email text not null unique');
-    expect(migration).toContain('create or replace function public.invite_room_member_by_email');
-    expect(migration).toContain('grant execute on function public.invite_room_member_by_email');
+  it('supports nickname profiles and invite-only activation', () => {
+    expect(migration).toContain('alter column email drop not null');
+    expect(migration).toContain('create or replace function public.start_profile');
+    expect(migration).toContain('create or replace function public.create_invite_code');
+    expect(migration).toContain('create unique index if not exists profiles_display_name_lower_idx');
+    expect(migration).toContain('drop function if exists public.invite_room_member_by_email');
+    expect(migration).toContain('drop policy if exists "owners can add members"');
+    expect(migration).toContain('create or replace function public.invite_room_member_by_display_name');
+    expect(migration).toContain('private.is_current_user_active_profile()');
     expect(migration).toContain('room owners can add themselves');
   });
 

@@ -33,7 +33,7 @@ export function createMessageRepository(client: SupabaseLikeClient) {
     listRecentMessages(roomId: string, limit = 50) {
       return client
         .from('messages')
-        .select('id,room_id,sender_id,kind,body,metadata,created_at')
+        .select('id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at')
         .eq('room_id', roomId)
         .order('created_at', { ascending: false })
         .limit(limit);

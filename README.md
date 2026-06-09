@@ -11,9 +11,9 @@ Implemented MVP:
 3. Interactive Ink terminal UI with slash commands.
 4. Canonical stock symbols such as `AAPL.US`, `0700.HK`, `600519.CN`.
 5. Supabase schema migration with RLS and explicit Data API grants.
-6. Supabase Auth login/signup/logout with local session persistence.
+6. Supabase anonymous Auth with nickname profiles, invite codes, and local session persistence.
 7. Stock quote Edge Function with current quote cache and Twelve Data adapter.
-8. Room creation, room join, email invite, member listing, message history, and realtime message/watchlist updates.
+8. Room creation, room join, nickname invite, member listing, message history, and realtime message/watchlist updates.
 9. Shared room watchlist and manual quote refresh.
 
 ## Requirements
@@ -60,15 +60,13 @@ pnpm dev
 ## Terminal Commands
 
 ```text
-/signup
-/signup <email> <password>
-/login
-/login <email> <password>
+/start [nickname] [invite-code]
 /logout
 /create <room name>
 /rooms
 /join <room id|room name>
-/invite <email>
+/invite <nickname>
+/invite-code
 /members
 /watch add <symbol>
 /watch remove <symbol>
@@ -78,14 +76,15 @@ pnpm dev
 /quit
 ```
 
-When `/login` or `/signup` is entered without arguments, HyChat prompts for email and masked password.
+The first activated profile becomes the admin. Run `/start` to use the default local username, or `/start <nickname>`. Admins can generate friend invite codes with `/invite-code`; friends activate with `/start <nickname> <invite-code>`.
 
 ## Supabase
 
-The initial migration is:
+The database migrations are:
 
 ```text
 supabase/migrations/20260606000000_initial_schema.sql
+supabase/migrations/20260609090028_nickname_invites.sql
 ```
 
 It creates:
@@ -96,8 +95,9 @@ It creates:
 4. `messages`
 5. `room_watchlist`
 6. `stock_quotes`
+7. `invite_codes`
 
-All public app tables enable RLS. Tables exposed through the Data API include explicit `GRANT` statements for `authenticated`. Private membership helper functions live in the non-exposed `private` schema to avoid RLS recursion in policies.
+All public app tables enable RLS. Tables exposed through the Data API include explicit `GRANT` statements for `authenticated`. Private membership and profile helper functions live in the non-exposed `private` schema to avoid RLS recursion in policies. Anonymous Auth users cannot create rooms or send messages until their `profiles.status` is `active`.
 
 ## Stock Quotes
 

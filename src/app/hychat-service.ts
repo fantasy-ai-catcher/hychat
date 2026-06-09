@@ -1,6 +1,8 @@
 export type HychatUser = {
   id: string;
-  email?: string;
+  displayName: string;
+  role: 'admin' | 'member';
+  status: 'active' | 'disabled';
 };
 
 export type RoomSummary = {
@@ -12,6 +14,7 @@ export type ChatMessageRow = {
   id: string;
   room_id: string;
   sender_id: string;
+  sender_display_name?: string;
   kind: 'text' | 'system';
   body: string;
   metadata?: Record<string, unknown>;
@@ -50,22 +53,25 @@ type ErrorLike = {
 
 type SupabaseLikeClient = {
   auth: {
-    signInWithPassword: (credentials: {
-      email: string;
-      password: string;
-    }) => Promise<{ data: { user: HychatUser | null }; error: ErrorLike | null }>;
-    signUp: (credentials: {
-      email: string;
-      password: string;
-    }) => Promise<{ data: { user: HychatUser | null }; error: ErrorLike | null }>;
+    signInAnonymously: () => Promise<{
+      data: { user: { id: string } | null };
+      error: ErrorLike | null;
+    }>;
     signOut: () => Promise<{ error: ErrorLike | null }>;
-    getUser: () => Promise<{ data: { user: HychatUser | null }; error: ErrorLike | null }>;
+    getUser: () => Promise<{ data: { user: { id: string } | null }; error: ErrorLike | null }>;
   };
   from: (table: string) => any;
   rpc: (name: string, args: Record<string, unknown>) => any;
   functions: {
     invoke: (name: string, args: Record<string, unknown>) => any;
   };
+};
+
+type ProfileRow = {
+  id: string;
+  display_name: string;
+  role: 'admin' | 'member';
+  status: 'active' | 'disabled';
 };
 
 export function createHychatService(supabase: SupabaseLikeClient) {
@@ -77,24 +83,31 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       }
 
       ensureNoError(result.error);
-      return result.data.user;
+      if (!result.data.user) {
+        return null;
+      }
+
+      const profile = await getProfile(supabase, result.data.user.id);
+      return profile?.status === 'active' ? toHychatUser(profile) : null;
     },
 
-    async signIn(email: string, password: string): Promise<HychatUser> {
-      const result = await supabase.auth.signInWithPassword({ email, password });
-      ensureNoError(result.error);
-      return ensureProfile(supabase, result.data.user, email);
-    },
-
-    async signUp(email: string, password: string): Promise<HychatUser> {
-      const result = await supabase.auth.signUp({ email, password });
-      ensureNoError(result.error);
-      return ensureProfile(supabase, result.data.user, email);
+    async startProfile(displayName: string, inviteCode?: string): Promise<HychatUser> {
+      await ensureAnonymousUser(supabase);
+      const result = await supabase.rpc('start_profile', {
+        target_display_name: displayName,
+        invite_code: inviteCode ?? null
+      });
+      return toHychatUser(await ensureData<ProfileRow>(result));
     },
 
     async signOut(): Promise<void> {
       const result = await supabase.auth.signOut();
       ensureNoError(result.error);
+    },
+
+    async createInviteCode(): Promise<string> {
+      const result = await supabase.rpc('create_invite_code', {});
+      return ensureData<string>(result);
     },
 
     async listRooms(): Promise<RoomSummary[]> {
@@ -122,10 +135,10 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       return room;
     },
 
-    async inviteMember(roomId: string, email: string): Promise<unknown> {
-      const result = await supabase.rpc('invite_room_member_by_email', {
+    async inviteMember(roomId: string, displayName: string): Promise<unknown> {
+      const result = await supabase.rpc('invite_room_member_by_display_name', {
         target_room_id: roomId,
-        target_email: email
+        target_display_name: displayName
       });
       return ensureData(result);
     },
@@ -142,7 +155,7 @@ export function createHychatService(supabase: SupabaseLikeClient) {
     async listRecentMessages(roomId: string, limit = 50): Promise<ChatMessageRow[]> {
       const result = await supabase
         .from('messages')
-        .select('id,room_id,sender_id,kind,body,metadata,created_at')
+        .select('id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at')
         .eq('room_id', roomId)
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -200,24 +213,49 @@ export function createHychatService(supabase: SupabaseLikeClient) {
   };
 }
 
-async function ensureProfile(
-  supabase: SupabaseLikeClient,
-  user: HychatUser | null,
-  email: string
-): Promise<HychatUser> {
-  if (!user) {
+async function ensureAnonymousUser(supabase: SupabaseLikeClient): Promise<{ id: string }> {
+  const current = await supabase.auth.getUser();
+  if (!isMissingAuthSessionError(current.error)) {
+    ensureNoError(current.error);
+  }
+
+  if (current.data.user) {
+    return current.data.user;
+  }
+
+  const result = await supabase.auth.signInAnonymously();
+  ensureNoError(result.error);
+  if (!result.data.user) {
     throw new Error('Supabase did not return an authenticated user.');
   }
 
-  await ensureData(
-    supabase.from('profiles').upsert({
-      id: user.id,
-      email,
-      display_name: email.split('@')[0] ?? email
-    })
-  );
+  return result.data.user;
+}
 
-  return { ...user, email: user.email ?? email };
+async function getProfile(
+  supabase: SupabaseLikeClient,
+  userId: string
+): Promise<ProfileRow | null> {
+  const query = supabase
+    .from('profiles')
+    .select('id,display_name,role,status')
+    .eq('id', userId);
+  const result =
+    typeof query.maybeSingle === 'function'
+      ? query.maybeSingle()
+      : typeof query.single === 'function'
+        ? query.single()
+        : query;
+  return ensureData<ProfileRow | null>(result);
+}
+
+function toHychatUser(profile: ProfileRow): HychatUser {
+  return {
+    id: profile.id,
+    displayName: profile.display_name,
+    role: profile.role,
+    status: profile.status
+  };
 }
 
 async function ensureData<T>(result: unknown | undefined): Promise<T> {

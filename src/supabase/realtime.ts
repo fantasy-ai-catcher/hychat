@@ -23,6 +23,7 @@ type RoomMessageChange = {
   id: string;
   room_id: string;
   sender_id: string;
+  sender_display_name?: string;
   kind: 'text' | 'system';
   body: string;
   created_at: string;

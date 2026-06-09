@@ -23,6 +23,7 @@ describe('UI state reducer', () => {
         id: 'message-1',
         roomId: 'room-1',
         senderId: 'user-1',
+        senderName: 'liudong',
         body: 'hello',
         createdAt: '2026-06-06T08:00:00.000Z'
       }
@@ -38,6 +39,7 @@ describe('UI state reducer', () => {
         id: 'old-message',
         roomId: 'room-1',
         senderId: 'user-1',
+        senderName: 'liudong',
         body: 'old',
         createdAt: '2026-06-06T08:00:00.000Z'
       }
@@ -51,6 +53,7 @@ describe('UI state reducer', () => {
           id: 'new-message',
           roomId: 'room-1',
           senderId: 'user-2',
+          senderName: 'alice',
           body: 'new',
           createdAt: '2026-06-06T08:01:00.000Z'
         }
@@ -62,6 +65,7 @@ describe('UI state reducer', () => {
         id: 'new-message',
         roomId: 'room-1',
         senderId: 'user-2',
+        senderName: 'alice',
         body: 'new',
         createdAt: '2026-06-06T08:01:00.000Z'
       }

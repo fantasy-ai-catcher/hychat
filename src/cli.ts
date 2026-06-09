@@ -7,6 +7,7 @@ import { render } from 'ink';
 
 import { createHychatService } from './app/hychat-service.js';
 import { createRealtimeAdapter } from './app/realtime-adapter.js';
+import { getDefaultDisplayName } from './app/default-display-name.js';
 import { getDefaultSessionPath, JsonFileStorage } from './app/session-storage.js';
 import { loadEnv, parseEnv } from './config/env.js';
 import { createHychatSupabaseClient } from './supabase/client.js';
@@ -124,7 +125,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     const service = createHychatService(supabase);
     const realtime = createRealtimeAdapter(supabase);
 
-    render(React.createElement(App, { service, realtime }));
+    render(React.createElement(App, { service, realtime, defaultDisplayName: getDefaultDisplayName() }));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start HyChat.';
     console.error(message);

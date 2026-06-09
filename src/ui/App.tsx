@@ -13,35 +13,28 @@ export type AppProps = {
   state?: AppState;
   service?: CreateChatSessionOptions['service'];
   realtime?: CreateChatSessionOptions['realtime'];
+  defaultDisplayName?: string;
 };
-
-type PromptMode =
-  | { kind: 'normal' }
-  | { kind: 'login-email' }
-  | { kind: 'signup-email' }
-  | { kind: 'login-password'; email: string }
-  | { kind: 'signup-password'; email: string };
 
 function createSnapshot(state: AppState): ChatSessionSnapshot {
   return {
     state,
     user: null,
-    statusText: 'Use /login or /signup to start.',
+    statusText: 'Use /start <nickname> [invite-code] to start.',
     helpLines: [],
     shouldExit: false
   };
 }
 
-export function App({ state: fixedState, service, realtime }: AppProps) {
+export function App({ state: fixedState, service, realtime, defaultDisplayName }: AppProps) {
   const { exit } = useApp();
   const [input, setInput] = useState('');
-  const [promptMode, setPromptMode] = useState<PromptMode>({ kind: 'normal' });
   const [snapshot, setSnapshot] = useState<ChatSessionSnapshot>(() =>
     createSnapshot(fixedState ?? createInitialAppState())
   );
   const session = useMemo(
-    () => (service ? createChatSession({ service, realtime }) : undefined),
-    [service, realtime]
+    () => (service ? createChatSession({ service, realtime, defaultDisplayName }) : undefined),
+    [service, realtime, defaultDisplayName]
   );
 
   useEffect(() => {
@@ -74,29 +67,8 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
 
     const trimmed = line.trim();
 
-    if (promptMode.kind === 'login-email' || promptMode.kind === 'signup-email') {
-      const prefix = promptMode.kind === 'login-email' ? 'login' : 'signup';
-      setPromptMode({ kind: `${prefix}-password`, email: trimmed } as PromptMode);
-      setSnapshot((current) => ({ ...current, statusText: 'Password:' }));
-      return;
-    }
-
-    if (promptMode.kind === 'login-password' || promptMode.kind === 'signup-password') {
-      const command = promptMode.kind === 'login-password' ? 'login' : 'signup';
-      setPromptMode({ kind: 'normal' });
-      setSnapshot(await session.handleLine(`/${command} ${promptMode.email} ${line}`));
-      return;
-    }
-
-    if (trimmed === '/login') {
-      setPromptMode({ kind: 'login-email' });
-      setSnapshot((current) => ({ ...current, statusText: 'Email:' }));
-      return;
-    }
-
-    if (trimmed === '/signup') {
-      setPromptMode({ kind: 'signup-email' });
-      setSnapshot((current) => ({ ...current, statusText: 'Email:' }));
+    if (trimmed === '') {
+      setSnapshot(await session.handleLine(line));
       return;
     }
 
@@ -127,19 +99,14 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
   });
 
   const activeState = fixedState ?? snapshot.state;
-  const promptLabel = getPromptLabel(promptMode);
-  const renderedInput =
-    promptMode.kind === 'login-password' || promptMode.kind === 'signup-password'
-      ? '*'.repeat(input.length)
-      : input;
 
   return (
     <AppShell
       state={activeState}
       statusText={snapshot.statusText}
-      userLabel={snapshot.user?.email ?? snapshot.user?.id}
-      promptLabel={promptLabel}
-      input={renderedInput}
+      userLabel={snapshot.user?.displayName}
+      promptLabel=">"
+      input={input}
     />
   );
 }
@@ -174,7 +141,7 @@ function AppShell({ state, statusText, userLabel, promptLabel, input }: AppShell
           ) : (
             messages.map((message) => (
               <Text key={message.id}>
-                {message.senderId}: {message.body}
+                {message.senderName ?? message.senderId}: {message.body}
               </Text>
             ))
           )}
@@ -209,17 +176,4 @@ export function InputComposer({ promptLabel, input }: InputComposerProps) {
       <Text> {input}</Text>
     </Box>
   );
-}
-
-function getPromptLabel(promptMode: PromptMode): string {
-  switch (promptMode.kind) {
-    case 'login-email':
-    case 'signup-email':
-      return 'email>';
-    case 'login-password':
-    case 'signup-password':
-      return 'password>';
-    case 'normal':
-      return '>';
-  }
 }

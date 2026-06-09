@@ -14,13 +14,13 @@ describe('App', () => {
       async getCurrentUser() {
         return null;
       },
-      async signIn() {
-        return { id: 'user-1', email: 'me@example.com' };
-      },
-      async signUp() {
-        return { id: 'user-1', email: 'me@example.com' };
+      async startProfile() {
+        return { id: 'user-1', displayName: 'liudong', role: 'admin' as const, status: 'active' as const };
       },
       async signOut() {},
+      async createInviteCode() {
+        return 'invite123';
+      },
       async listRooms() {
         return [];
       },
@@ -48,7 +48,7 @@ describe('App', () => {
   it('renders a bordered input composer', () => {
     const element = InputComposer({
       promptLabel: '>',
-      input: '/signup test@example.com password123'
+      input: '/start liudong'
     }) as React.ReactElement<{ borderStyle?: string; paddingX?: number }>;
 
     expect(element.props.borderStyle).toBe('round');
