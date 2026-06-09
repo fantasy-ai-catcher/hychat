@@ -192,9 +192,21 @@ function AppShell({ state, statusText, userLabel, promptLabel, input }: AppShell
         </Box>
       </Box>
       <Text dimColor>{statusText}</Text>
-      <Text>
-        {promptLabel} {input}
-      </Text>
+      <InputComposer promptLabel={promptLabel} input={input} />
+    </Box>
+  );
+}
+
+export type InputComposerProps = {
+  promptLabel: string;
+  input: string;
+};
+
+export function InputComposer({ promptLabel, input }: InputComposerProps) {
+  return (
+    <Box borderStyle="round" borderColor="gray" paddingX={1} flexShrink={0}>
+      <Text color="cyan">{promptLabel}</Text>
+      <Text> {input}</Text>
     </Box>
   );
 }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { App } from './App.js';
+import { App, InputComposer } from './App.js';
 import { createInitialAppState } from './state.js';
 
 describe('App', () => {
@@ -43,5 +43,15 @@ describe('App', () => {
     };
 
     expect(React.isValidElement(<App service={service} />)).toBe(true);
+  });
+
+  it('renders a bordered input composer', () => {
+    const element = InputComposer({
+      promptLabel: '>',
+      input: '/signup test@example.com password123'
+    }) as React.ReactElement<{ borderStyle?: string; paddingX?: number }>;
+
+    expect(element.props.borderStyle).toBe('round');
+    expect(element.props.paddingX).toBe(1);
   });
 });
