@@ -85,6 +85,11 @@ The database migrations are:
 ```text
 supabase/migrations/20260606000000_initial_schema.sql
 supabase/migrations/20260609090028_nickname_invites.sql
+supabase/migrations/20260610072815_fix_start_profile_ambiguous_id.sql
+supabase/migrations/20260610073049_fix_start_profile_variable_conflict.sql
+supabase/migrations/20260610073307_allow_setup_start_before_invites.sql
+supabase/migrations/20260610073537_fix_invite_code_generation.sql
+supabase/migrations/20260610074931_list_room_members.sql
 ```
 
 It creates:
