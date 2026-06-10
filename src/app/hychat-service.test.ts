@@ -81,7 +81,7 @@ function createMockSupabase() {
       rpc(name: string, args: unknown) {
         calls.push({ method: 'rpc', args: [name, args] });
         if (name === 'start_profile') {
-          return Promise.resolve({ data: profile, error: null });
+          return Promise.resolve({ data: [profile], error: null });
         }
         if (name === 'create_invite_code') {
           return Promise.resolve({ data: 'invite123', error: null });

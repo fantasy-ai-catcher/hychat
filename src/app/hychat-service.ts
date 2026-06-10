@@ -97,7 +97,12 @@ export function createHychatService(supabase: SupabaseLikeClient) {
         target_display_name: displayName,
         invite_code: inviteCode ?? null
       });
-      return toHychatUser(await ensureData<ProfileRow>(result));
+      const profile = await ensureData<ProfileRow | ProfileRow[]>(result);
+      const row = Array.isArray(profile) ? profile[0] : profile;
+      if (!row) {
+        throw new Error('Supabase did not return a profile.');
+      }
+      return toHychatUser(row);
     },
 
     async signOut(): Promise<void> {

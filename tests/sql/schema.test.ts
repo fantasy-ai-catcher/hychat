@@ -8,6 +8,26 @@ const migration = readdirSync('supabase/migrations')
   .join('\n')
   .toLowerCase();
 
+const fixStartProfileMigration = readFileSync(
+  'supabase/migrations/20260610072815_fix_start_profile_ambiguous_id.sql',
+  'utf8'
+).toLowerCase();
+
+const fixStartProfileConflictMigration = readFileSync(
+  'supabase/migrations/20260610073049_fix_start_profile_variable_conflict.sql',
+  'utf8'
+).toLowerCase();
+
+const allowSetupStartMigration = readFileSync(
+  'supabase/migrations/20260610073307_allow_setup_start_before_invites.sql',
+  'utf8'
+).toLowerCase();
+
+const fixInviteCodeMigration = readFileSync(
+  'supabase/migrations/20260610073537_fix_invite_code_generation.sql',
+  'utf8'
+).toLowerCase();
+
 describe('initial Supabase schema migration', () => {
   it('creates the core chat and stock tables', () => {
     for (const table of [
@@ -58,6 +78,12 @@ describe('initial Supabase schema migration', () => {
     expect(migration).toContain('drop policy if exists "owners can add members"');
     expect(migration).toContain('create or replace function public.invite_room_member_by_display_name');
     expect(migration).toContain('private.is_current_user_active_profile()');
+    expect(fixStartProfileMigration).toContain('result_id uuid');
+    expect(fixStartProfileMigration).not.toContain('into id, display_name, role, status');
+    expect(fixStartProfileConflictMigration).toContain('#variable_conflict use_column');
+    expect(allowSetupStartMigration).toContain('invite_code_count = 0');
+    expect(fixInviteCodeMigration).toContain('gen_random_uuid()');
+    expect(fixInviteCodeMigration).not.toContain('gen_random_bytes');
     expect(migration).toContain('room owners can add themselves');
   });
 
