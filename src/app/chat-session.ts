@@ -78,6 +78,7 @@ export type CreateChatSessionOptions = {
   service: ChatServiceLike;
   realtime?: RealtimeLike;
   defaultDisplayName?: string;
+  onSnapshotChange?: (snapshot: ChatSessionSnapshot) => void;
 };
 
 const helpSections = [
@@ -181,6 +182,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
     return { state, user, statusText, helpLines, shouldExit };
   }
 
+  function emitSnapshotChange(): void {
+    options.onSnapshotChange?.(snapshot());
+  }
+
   function apply(action: Parameters<typeof reducer>[1]): void {
     state = reducer(state, action);
   }
@@ -232,12 +237,14 @@ export function createChatSession(options: CreateChatSessionOptions) {
     subscription = options.realtime?.subscribeToRoom(roomId, {
       onMessage(message) {
         apply({ type: 'message-received', message: toChatMessage(message) });
+        emitSnapshotChange();
       },
       onWatchlistChange() {
-        void loadRoomData(roomId);
+        void loadRoomData(roomId).then(emitSnapshotChange);
       },
       onStatus(status) {
         apply({ type: 'connection-changed', status: status === 'SUBSCRIBED' ? 'connected' : 'connecting' });
+        emitSnapshotChange();
       }
     });
   }

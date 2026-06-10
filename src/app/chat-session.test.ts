@@ -235,4 +235,57 @@ describe('createChatSession', () => {
       })
     );
   });
+
+  it('emits a fresh snapshot when realtime messages arrive', async () => {
+    const { service } = createService();
+    let messageHandler:
+      | ((message: {
+          id: string;
+          room_id: string;
+          sender_id: string;
+          sender_display_name?: string;
+          kind: 'text' | 'system';
+          body: string;
+          created_at: string;
+        }) => void)
+      | undefined;
+    const onSnapshotChange = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        messageHandler = handlers.onMessage;
+        return { unsubscribe: vi.fn() };
+      })
+    };
+    const session = createChatSession({ service, realtime, onSnapshotChange });
+
+    await session.handleLine('/start liudong');
+    await session.handleLine('/join Friends');
+    onSnapshotChange.mockClear();
+
+    messageHandler?.({
+      id: 'message-2',
+      room_id: 'room-1',
+      sender_id: 'user-2',
+      sender_display_name: 'test',
+      kind: 'text',
+      body: 'from another terminal',
+      created_at: '2026-06-06T08:02:00.000Z'
+    });
+
+    expect(onSnapshotChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          messagesByRoom: expect.objectContaining({
+            'room-1': expect.arrayContaining([
+              expect.objectContaining({
+                id: 'message-2',
+                senderName: 'test',
+                body: 'from another terminal'
+              })
+            ])
+          })
+        })
+      })
+    );
+  });
 });

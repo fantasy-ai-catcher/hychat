@@ -34,7 +34,15 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
     createSnapshot(fixedState ?? createInitialAppState())
   );
   const session = useMemo(
-    () => (service ? createChatSession({ service, realtime, defaultDisplayName }) : undefined),
+    () =>
+      service
+        ? createChatSession({
+            service,
+            realtime,
+            defaultDisplayName,
+            onSnapshotChange: setSnapshot
+          })
+        : undefined,
     [service, realtime, defaultDisplayName]
   );
 
