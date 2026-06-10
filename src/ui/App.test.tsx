@@ -48,10 +48,31 @@ describe('App', () => {
   it('renders a bordered input composer', () => {
     const element = InputComposer({
       promptLabel: '>',
-      input: '/start liudong'
+      input: '/start liudong',
+      cursorVisible: true
     }) as React.ReactElement<{ borderStyle?: string; paddingX?: number }>;
 
     expect(element.props.borderStyle).toBe('round');
     expect(element.props.paddingX).toBe(1);
+  });
+
+  it('renders a cursor after the current input', () => {
+    const visibleElement = InputComposer({
+      promptLabel: '>',
+      input: '/start liudong',
+      cursorVisible: true
+    }) as React.ReactElement<{ children: React.ReactNode[] }>;
+    const hiddenElement = InputComposer({
+      promptLabel: '>',
+      input: '/start liudong',
+      cursorVisible: false
+    }) as React.ReactElement<{ children: React.ReactNode[] }>;
+
+    expect(visibleElement.props.children.at(-1)).toMatchObject({
+      props: { children: '|' }
+    });
+    expect(hiddenElement.props.children.at(-1)).toMatchObject({
+      props: { children: ' ' }
+    });
   });
 });

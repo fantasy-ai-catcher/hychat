@@ -29,6 +29,7 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
 export function App({ state: fixedState, service, realtime, defaultDisplayName }: AppProps) {
   const { exit } = useApp();
   const [input, setInput] = useState('');
+  const [cursorVisible, setCursorVisible] = useState(true);
   const [snapshot, setSnapshot] = useState<ChatSessionSnapshot>(() =>
     createSnapshot(fixedState ?? createInitialAppState())
   );
@@ -59,6 +60,16 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
       exit();
     }
   }, [exit, snapshot.shouldExit]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCursorVisible((current) => !current);
+    }, 500);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
 
   async function submitLine(line: string): Promise<void> {
     if (!session) {
@@ -107,6 +118,7 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
       userLabel={snapshot.user?.displayName}
       promptLabel=">"
       input={input}
+      cursorVisible={cursorVisible}
     />
   );
 }
@@ -117,9 +129,10 @@ type AppShellProps = {
   userLabel?: string;
   promptLabel: string;
   input: string;
+  cursorVisible: boolean;
 };
 
-function AppShell({ state, statusText, userLabel, promptLabel, input }: AppShellProps) {
+function AppShell({ state, statusText, userLabel, promptLabel, input, cursorVisible }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const messages = roomId ? state.messagesByRoom[roomId] ?? [] : [];
@@ -159,7 +172,7 @@ function AppShell({ state, statusText, userLabel, promptLabel, input }: AppShell
         </Box>
       </Box>
       <Text dimColor>{statusText}</Text>
-      <InputComposer promptLabel={promptLabel} input={input} />
+      <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
     </Box>
   );
 }
@@ -167,13 +180,15 @@ function AppShell({ state, statusText, userLabel, promptLabel, input }: AppShell
 export type InputComposerProps = {
   promptLabel: string;
   input: string;
+  cursorVisible: boolean;
 };
 
-export function InputComposer({ promptLabel, input }: InputComposerProps) {
+export function InputComposer({ promptLabel, input, cursorVisible }: InputComposerProps) {
   return (
     <Box borderStyle="round" borderColor="gray" paddingX={1} flexShrink={0}>
       <Text color="cyan">{promptLabel}</Text>
       <Text> {input}</Text>
+      <Text color="cyan">{cursorVisible ? '|' : ' '}</Text>
     </Box>
   );
 }
