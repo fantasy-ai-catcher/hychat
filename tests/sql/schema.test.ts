@@ -85,6 +85,9 @@ describe('initial Supabase schema migration', () => {
     expect(fixInviteCodeMigration).toContain('gen_random_uuid()');
     expect(fixInviteCodeMigration).not.toContain('gen_random_bytes');
     expect(migration).toContain('room owners can add themselves');
+    expect(migration).toContain('create or replace function public.list_room_members');
+    expect(migration).toContain('grant execute on function public.list_room_members(uuid) to authenticated');
+    expect(migration).toContain('security invoker');
   });
 
   it('bounds message size and quote cache growth', () => {

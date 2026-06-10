@@ -36,6 +36,25 @@ function createService() {
       async inviteMember(roomId: string, displayName: string) {
         calls.push({ method: 'inviteMember', args: [roomId, displayName] });
       },
+      async listMembers(roomId: string) {
+        calls.push({ method: 'listMembers', args: [roomId] });
+        return [
+          {
+            room_id: roomId,
+            user_id: 'user-1',
+            display_name: 'liudong',
+            role: 'owner' as const,
+            created_at: '2026-06-06T08:00:00.000Z'
+          },
+          {
+            room_id: roomId,
+            user_id: 'user-2',
+            display_name: 'alice',
+            role: 'member' as const,
+            created_at: '2026-06-06T08:01:00.000Z'
+          }
+        ];
+      },
       async listRecentMessages(roomId: string) {
         calls.push({ method: 'listRecentMessages', args: [roomId] });
         return [
@@ -124,6 +143,20 @@ describe('createChatSession', () => {
     await session.handleLine('/start liudong');
     let snapshot = await session.handleLine('/create Friends');
     expect(snapshot.state.activeRoomId).toBe('room-1');
+    expect(snapshot.state.membersByRoom['room-1']).toEqual([
+      {
+        roomId: 'room-1',
+        userId: 'user-1',
+        displayName: 'liudong',
+        role: 'owner'
+      },
+      {
+        roomId: 'room-1',
+        userId: 'user-2',
+        displayName: 'alice',
+        role: 'member'
+      }
+    ]);
 
     snapshot = await session.handleLine('/watch add AAPL.US');
     expect(snapshot.state.watchlistByRoom['room-1']).toEqual(['AAPL.US']);
@@ -144,9 +177,24 @@ describe('createChatSession', () => {
         {
           method: 'sendTextMessage',
           args: [{ roomId: 'room-1', senderId: 'user-1', body: 'hello from terminal' }]
+        },
+        {
+          method: 'listMembers',
+          args: ['room-1']
         }
       ])
     );
+  });
+
+  it('shows member nicknames in the members command', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    await session.handleLine('/join Friends');
+    const snapshot = await session.handleLine('/members');
+
+    expect(snapshot.statusText).toBe('owner:liudong member:alice');
   });
 
   it('subscribes to realtime updates when a room is joined', async () => {

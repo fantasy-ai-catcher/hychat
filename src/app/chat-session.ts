@@ -6,6 +6,7 @@ import {
   type AppState,
   type ChatMessage,
   type QuoteSummary,
+  type RoomMemberSummary,
   type RoomSummary
 } from '../ui/state.js';
 import type {
@@ -29,7 +30,7 @@ type MemberRow = {
   room_id: string;
   user_id: string;
   display_name?: string;
-  role: string;
+  role: 'owner' | 'member';
   created_at?: string;
 };
 
@@ -116,11 +117,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
   }
 
   async function loadRoomData(roomId: string): Promise<void> {
-    const [messages, watchlist] = await Promise.all([
+    const [messages, watchlist, members] = await Promise.all([
       options.service.listRecentMessages(roomId),
-      options.service.listWatchlist(roomId)
+      options.service.listWatchlist(roomId),
+      options.service.listMembers ? options.service.listMembers(roomId) : Promise.resolve([])
     ]);
     apply({ type: 'messages-loaded', roomId, messages: messages.map(toChatMessage) });
+    apply({ type: 'members-loaded', roomId, members: members.map(toRoomMemberSummary) });
     apply({
       type: 'watchlist-updated',
       roomId,
@@ -250,9 +253,12 @@ export function createChatSession(options: CreateChatSessionOptions) {
         const members = options.service.listMembers
           ? await options.service.listMembers(roomId)
           : [];
+        apply({ type: 'members-loaded', roomId, members: members.map(toRoomMemberSummary) });
         statusText =
           members.length > 0
-            ? members.map((member) => `${member.role}:${member.user_id}`).join(' ')
+            ? members
+                .map((member) => `${member.role}:${member.display_name ?? member.user_id}`)
+                .join(' ')
             : 'Members can be invited with /invite <nickname>.';
         return;
       }
@@ -378,6 +384,15 @@ function toChatMessage(message: ChatMessageRow): ChatMessage {
     senderName: message.sender_display_name ?? message.sender_id,
     body: message.body,
     createdAt: message.created_at
+  };
+}
+
+function toRoomMemberSummary(member: MemberRow): RoomMemberSummary {
+  return {
+    roomId: member.room_id,
+    userId: member.user_id,
+    displayName: member.display_name,
+    role: member.role
   };
 }
 

@@ -116,6 +116,7 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
       state={activeState}
       statusText={snapshot.statusText}
       userLabel={snapshot.user?.displayName}
+      userRole={snapshot.user?.role}
       promptLabel=">"
       input={input}
       cursorVisible={cursorVisible}
@@ -127,26 +128,28 @@ type AppShellProps = {
   state: AppState;
   statusText: string;
   userLabel?: string;
+  userRole?: string;
   promptLabel: string;
   input: string;
   cursorVisible: boolean;
 };
 
-function AppShell({ state, statusText, userLabel, promptLabel, input, cursorVisible }: AppShellProps) {
+function AppShell({
+  state,
+  statusText,
+  userLabel,
+  userRole,
+  promptLabel,
+  input,
+  cursorVisible
+}: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const messages = roomId ? state.messagesByRoom[roomId] ?? [] : [];
-  const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
 
   return (
     <Box flexDirection="column">
-      <Box justifyContent="space-between">
-        <Text>
-          HyChat{activeRoom ? ` / ${activeRoom.name}` : ''}
-          {userLabel ? ` / ${userLabel}` : ''}
-        </Text>
-        <Text>{state.connectionStatus}</Text>
-      </Box>
+      <Text>HyChat</Text>
       <Box flexDirection="row" gap={2}>
         <Box flexDirection="column" flexGrow={1}>
           {messages.length === 0 ? (
@@ -159,20 +162,56 @@ function AppShell({ state, statusText, userLabel, promptLabel, input, cursorVisi
             ))
           )}
         </Box>
-        <Box flexDirection="column" width={24}>
-          <Text>stocks</Text>
-          {symbols.map((symbol) => {
-            const quote = state.quotesBySymbol[symbol];
-            return (
-              <Text key={symbol}>
-                {symbol} {quote?.price ?? '-'} {quote?.changePercent ?? '-'}%
-              </Text>
-            );
-          })}
-        </Box>
+        <InfoPanel state={state} userLabel={userLabel} userRole={userRole} />
       </Box>
       <Text dimColor>{statusText}</Text>
       <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
+    </Box>
+  );
+}
+
+export type InfoPanelProps = {
+  state: AppState;
+  userLabel?: string;
+  userRole?: string;
+};
+
+export function InfoPanel({ state, userLabel, userRole }: InfoPanelProps) {
+  const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
+  const roomId = activeRoom?.id;
+  const members = roomId ? state.membersByRoom[roomId] ?? [] : [];
+  const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
+
+  return (
+    <Box borderStyle="round" borderColor="gray" flexDirection="column" paddingX={1} width={34}>
+      <Text color="cyan">Session</Text>
+      <Text>account  {userLabel ?? '-'}</Text>
+      <Text>role     {userRole ?? '-'}</Text>
+      <Text>room     {activeRoom?.name ?? '-'}</Text>
+      <Text>status   {state.connectionStatus}</Text>
+      <Text color="cyan">Members</Text>
+      {members.length === 0 ? (
+        <Text dimColor>-</Text>
+      ) : (
+        members.map((member) => (
+          <Text key={member.userId}>
+            {member.displayName ?? member.userId}  {member.role}
+          </Text>
+        ))
+      )}
+      <Text color="cyan">Stocks</Text>
+      {symbols.length === 0 ? (
+        <Text dimColor>-</Text>
+      ) : (
+        symbols.map((symbol) => {
+          const quote = state.quotesBySymbol[symbol];
+          return (
+            <Text key={symbol}>
+              {symbol}  {quote?.price ?? '-'}  {formatQuoteChange(quote?.changePercent)}
+            </Text>
+          );
+        })
+      )}
     </Box>
   );
 }
@@ -191,4 +230,12 @@ export function InputComposer({ promptLabel, input, cursorVisible }: InputCompos
       <Text color="cyan">{cursorVisible ? '|' : ' '}</Text>
     </Box>
   );
+}
+
+function formatQuoteChange(changePercent: number | undefined): string {
+  if (changePercent === undefined) {
+    return '-';
+  }
+
+  return `${changePercent > 0 ? '+' : ''}${changePercent}%`;
 }

@@ -86,6 +86,20 @@ function createMockSupabase() {
         if (name === 'create_invite_code') {
           return Promise.resolve({ data: 'invite123', error: null });
         }
+        if (name === 'list_room_members') {
+          return Promise.resolve({
+            data: [
+              {
+                room_id: 'room-1',
+                user_id: 'user-1',
+                display_name: 'liudong',
+                role: 'owner',
+                created_at: '2026-06-06T08:00:00.000Z'
+              }
+            ],
+            error: null
+          });
+        }
         return Promise.resolve({ data: 'user-2', error: null });
       },
       functions: {
@@ -195,14 +209,22 @@ describe('createHychatService', () => {
     const { supabase, calls } = createMockSupabase();
     const service = createHychatService(supabase);
 
-    await service.listMembers('room-1');
+    await expect(service.listMembers('room-1')).resolves.toEqual([
+      {
+        room_id: 'room-1',
+        user_id: 'user-1',
+        display_name: 'liudong',
+        role: 'owner',
+        created_at: '2026-06-06T08:00:00.000Z'
+      }
+    ]);
 
     expect(calls).toEqual(
       expect.arrayContaining([
-        { method: 'from', args: ['room_members'] },
-        { method: 'select', args: ['room_id,user_id,role,created_at'] },
-        { method: 'eq', args: ['room_id', 'room-1'] },
-        { method: 'order', args: ['created_at', { ascending: true }] }
+        {
+          method: 'rpc',
+          args: ['list_room_members', { target_room_id: 'room-1' }]
+        }
       ])
     );
   });

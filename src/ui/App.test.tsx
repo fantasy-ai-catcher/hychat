@@ -1,8 +1,28 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { App, InputComposer } from './App.js';
-import { createInitialAppState } from './state.js';
+import { App, InfoPanel, InputComposer } from './App.js';
+import { createInitialAppState, type AppState } from './state.js';
+
+function collectText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') {
+    return '';
+  }
+
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(collectText).join('');
+  }
+
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return collectText(node.props.children);
+  }
+
+  return '';
+}
 
 describe('App', () => {
   it('creates a React element for the terminal UI shell', () => {
@@ -74,5 +94,49 @@ describe('App', () => {
     expect(hiddenElement.props.children.at(-1)).toMatchObject({
       props: { children: ' ' }
     });
+  });
+
+  it('renders session details, members, and watched stocks in one info panel', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {
+        'room-1': [
+          { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', role: 'owner' },
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', role: 'member' }
+        ]
+      },
+      watchlistByRoom: { 'room-1': ['AAPL.US'] },
+      quotesBySymbol: {
+        'AAPL.US': {
+          symbol: 'AAPL.US',
+          price: 123,
+          changePercent: 1.2,
+          cacheStatus: 'hit'
+        }
+      },
+      connectionStatus: 'connected'
+    };
+
+    const panel = InfoPanel({
+      state,
+      userLabel: 'liudong',
+      userRole: 'admin'
+    }) as React.ReactElement<{ borderStyle?: string; width?: number }>;
+    const text = collectText(panel);
+
+    expect(panel.props.borderStyle).toBe('round');
+    expect(panel.props.width).toBeGreaterThanOrEqual(30);
+    expect(text).toContain('account');
+    expect(text).toContain('liudong');
+    expect(text).toContain('admin');
+    expect(text).toContain('room');
+    expect(text).toContain('Friends');
+    expect(text).toContain('Members');
+    expect(text).toContain('alice');
+    expect(text).toContain('Stocks');
+    expect(text).toContain('AAPL.US');
+    expect(text).toContain('1.2%');
   });
 });

@@ -12,6 +12,13 @@ export type ChatMessage = {
   createdAt: string;
 };
 
+export type RoomMemberSummary = {
+  roomId: string;
+  userId: string;
+  displayName?: string;
+  role: 'owner' | 'member';
+};
+
 export type QuoteSummary = {
   symbol: string;
   price?: number;
@@ -25,6 +32,7 @@ export type AppState = {
   rooms: RoomSummary[];
   activeRoomId?: string;
   messagesByRoom: Record<string, ChatMessage[]>;
+  membersByRoom: Record<string, RoomMemberSummary[]>;
   watchlistByRoom: Record<string, string[]>;
   quotesBySymbol: Record<string, QuoteSummary>;
   connectionStatus: ConnectionStatus;
@@ -34,6 +42,7 @@ export type AppAction =
   | { type: 'rooms-loaded'; rooms: RoomSummary[] }
   | { type: 'room-joined'; roomId: string }
   | { type: 'messages-loaded'; roomId: string; messages: ChatMessage[] }
+  | { type: 'members-loaded'; roomId: string; members: RoomMemberSummary[] }
   | { type: 'message-received'; message: ChatMessage }
   | { type: 'watchlist-updated'; roomId: string; symbols: string[] }
   | { type: 'quotes-updated'; quotes: QuoteSummary[] }
@@ -43,6 +52,7 @@ export function createInitialAppState(): AppState {
   return {
     rooms: [],
     messagesByRoom: {},
+    membersByRoom: {},
     watchlistByRoom: {},
     quotesBySymbol: {},
     connectionStatus: 'idle'
@@ -61,6 +71,14 @@ export function reducer(state: AppState, action: AppAction): AppState {
         messagesByRoom: {
           ...state.messagesByRoom,
           [action.roomId]: action.messages
+        }
+      };
+    case 'members-loaded':
+      return {
+        ...state,
+        membersByRoom: {
+          ...state.membersByRoom,
+          [action.roomId]: action.members
         }
       };
     case 'message-received':

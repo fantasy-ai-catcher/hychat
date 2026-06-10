@@ -101,6 +101,42 @@ describe('UI state reducer', () => {
     });
   });
 
+  it('stores room members per room', () => {
+    const state = reducer(createInitialAppState(), {
+      type: 'members-loaded',
+      roomId: 'room-1',
+      members: [
+        {
+          roomId: 'room-1',
+          userId: 'user-1',
+          displayName: 'liudong',
+          role: 'owner'
+        },
+        {
+          roomId: 'room-1',
+          userId: 'user-2',
+          displayName: 'alice',
+          role: 'member'
+        }
+      ]
+    });
+
+    expect(state.membersByRoom['room-1']).toEqual([
+      {
+        roomId: 'room-1',
+        userId: 'user-1',
+        displayName: 'liudong',
+        role: 'owner'
+      },
+      {
+        roomId: 'room-1',
+        userId: 'user-2',
+        displayName: 'alice',
+        role: 'member'
+      }
+    ]);
+  });
+
   it('tracks connection status', () => {
     expect(
       reducer(createInitialAppState(), {

@@ -31,6 +31,7 @@ export type WatchlistRow = {
 export type RoomMemberRow = {
   room_id: string;
   user_id: string;
+  display_name?: string;
   role: 'owner' | 'member';
   created_at: string;
 };
@@ -149,11 +150,9 @@ export function createHychatService(supabase: SupabaseLikeClient) {
     },
 
     async listMembers(roomId: string): Promise<RoomMemberRow[]> {
-      const result = await supabase
-        .from('room_members')
-        .select('room_id,user_id,role,created_at')
-        .eq('room_id', roomId)
-        .order('created_at', { ascending: true });
+      const result = await supabase.rpc('list_room_members', {
+        target_room_id: roomId
+      });
       return ensureData<RoomMemberRow[]>(result);
     },
 
