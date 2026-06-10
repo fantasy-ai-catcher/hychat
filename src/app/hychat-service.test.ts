@@ -228,4 +228,42 @@ describe('createHychatService', () => {
       ])
     );
   });
+
+  it('falls back to room_members when the member RPC is missing from the schema cache', async () => {
+    const { supabase, calls } = createMockSupabase();
+    (supabase as { rpc: (name: string, args: unknown) => Promise<unknown> }).rpc = (
+      name: string,
+      args: unknown
+    ) => {
+      calls.push({ method: 'rpc', args: [name, args] });
+      if (name === 'list_room_members') {
+        return Promise.resolve({
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message:
+              'Could not find the function public.list_room_members(target_room_id) in the schema cache'
+          }
+        });
+      }
+
+      return Promise.resolve({ data: null, error: null });
+    };
+    const service = createHychatService(supabase);
+
+    await expect(service.listMembers('room-1')).resolves.toEqual([]);
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          method: 'rpc',
+          args: ['list_room_members', { target_room_id: 'room-1' }]
+        },
+        { method: 'from', args: ['room_members'] },
+        { method: 'select', args: ['room_id,user_id,role,created_at'] },
+        { method: 'eq', args: ['room_id', 'room-1'] },
+        { method: 'order', args: ['created_at', { ascending: true }] }
+      ])
+    );
+  });
 });

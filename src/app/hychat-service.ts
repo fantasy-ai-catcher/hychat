@@ -50,6 +50,7 @@ export type AddWatchSymbolInput = {
 
 type ErrorLike = {
   message: string;
+  code?: string;
 };
 
 type SupabaseLikeClient = {
@@ -153,7 +154,13 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       const result = await supabase.rpc('list_room_members', {
         target_room_id: roomId
       });
-      return ensureData<RoomMemberRow[]>(result);
+      const awaited = (await result) as { data: RoomMemberRow[] | null; error: ErrorLike | null };
+      if (isMissingRpcSchemaCacheError(awaited.error)) {
+        return listMembersFromTable(supabase, roomId);
+      }
+
+      ensureNoError(awaited.error);
+      return awaited.data ?? [];
     },
 
     async listRecentMessages(roomId: string, limit = 50): Promise<ChatMessageRow[]> {
@@ -253,6 +260,18 @@ async function getProfile(
   return ensureData<ProfileRow | null>(result);
 }
 
+async function listMembersFromTable(
+  supabase: SupabaseLikeClient,
+  roomId: string
+): Promise<RoomMemberRow[]> {
+  const result = await supabase
+    .from('room_members')
+    .select('room_id,user_id,role,created_at')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: true });
+  return ensureData<RoomMemberRow[]>(result);
+}
+
 function toHychatUser(profile: ProfileRow): HychatUser {
   return {
     id: profile.id,
@@ -276,6 +295,18 @@ function ensureNoError(error: ErrorLike | null): void {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+function isMissingRpcSchemaCacheError(error: ErrorLike | null): boolean {
+  if (!error) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    error.code === 'PGRST202' ||
+    (message.includes('could not find the function') && message.includes('schema cache'))
+  );
 }
 
 function isMissingAuthSessionError(error: ErrorLike | null): boolean {
