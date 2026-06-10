@@ -15,6 +15,8 @@ export type AppProps = {
   service?: CreateChatSessionOptions['service'];
   realtime?: CreateChatSessionOptions['realtime'];
   defaultDisplayName?: string;
+  autoStartDisplayName?: string;
+  autoStartInviteCode?: string;
 };
 
 function createSnapshot(state: AppState): ChatSessionSnapshot {
@@ -27,7 +29,14 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
   };
 }
 
-export function App({ state: fixedState, service, realtime, defaultDisplayName }: AppProps) {
+export function App({
+  state: fixedState,
+  service,
+  realtime,
+  defaultDisplayName,
+  autoStartDisplayName,
+  autoStartInviteCode
+}: AppProps) {
   const { exit } = useApp();
   const [input, setInput] = useState('');
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -41,10 +50,12 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
             service,
             realtime,
             defaultDisplayName,
+            autoStartDisplayName,
+            autoStartInviteCode,
             onSnapshotChange: setSnapshot
           })
         : undefined,
-    [service, realtime, defaultDisplayName]
+    [service, realtime, defaultDisplayName, autoStartDisplayName, autoStartInviteCode]
   );
 
   useEffect(() => {
@@ -160,8 +171,9 @@ export function AppShell({
   const roomId = activeRoom?.id;
   const messages = roomId ? state.messagesByRoom[roomId] ?? [] : [];
   const shellHeight = Math.max(height ?? process.stdout.rows ?? 24, 12);
-  const topHeight = roomId ? 5 : 3;
-  const bottomHeight = 5;
+  const topHeight = 5;
+  const statusHeight = getStatusHeight(statusText);
+  const bottomHeight = statusHeight + 4;
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
 
   return (
@@ -188,6 +200,8 @@ export function TopInfoPanel({ state, userLabel, userRole, height }: TopInfoPane
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const members = roomId ? state.membersByRoom[roomId] ?? [] : [];
+  const visibleMembers = members.slice(0, 3);
+  const hiddenMemberCount = members.length - visibleMembers.length;
   const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
 
   return (
@@ -207,9 +221,24 @@ export function TopInfoPanel({ state, userLabel, userRole, height }: TopInfoPane
       </Text>
       <Text>
         Members:{' '}
-        {members.length > 0
-          ? members.map((member) => member.displayName ?? member.userId).join(', ')
-          : '-'}
+        {members.length > 0 ? (
+          <>
+            {visibleMembers.map((member, index) => (
+              <React.Fragment key={member.userId}>
+                {index > 0 ? <Text>, </Text> : null}
+                <Text color={resolveProfileColor(member.displayColor)}>
+                  {member.displayName ?? member.userId}
+                </Text>
+                <Text>
+                  ({member.role}, {member.displayColor ?? 'white'})
+                </Text>
+              </React.Fragment>
+            ))}
+            {hiddenMemberCount > 0 ? <Text dimColor> +{hiddenMemberCount} more</Text> : null}
+          </>
+        ) : (
+          '-'
+        )}
       </Text>
       <Text>
         Stocks:{' '}
@@ -252,10 +281,14 @@ export function MessageViewport({ messages, height }: MessageViewportProps) {
 }
 
 export function StatusText({ text }: { text: string }) {
-  const firstLine = text.split('\n')[0] ?? '';
+  const lines = text.split('\n').slice(0, getStatusHeight(text));
   return (
-    <Box height={1} overflow="hidden" flexShrink={0}>
-      <Text dimColor>{firstLine}</Text>
+    <Box flexDirection="column" height={lines.length} overflow="hidden" flexShrink={0}>
+      {lines.map((line, index) => (
+        <Text key={`${index}:${line}`} dimColor>
+          {line}
+        </Text>
+      ))}
     </Box>
   );
 }
@@ -325,4 +358,8 @@ function summarizeItems(items: string[], visibleCount: number): string {
   const visible = items.slice(0, visibleCount).join(', ');
   const hiddenCount = items.length - visibleCount;
   return hiddenCount > 0 ? `${visible} +${hiddenCount}` : visible;
+}
+
+function getStatusHeight(text: string): number {
+  return Math.min(Math.max(text.split('\n').length, 1), 8);
 }

@@ -10,6 +10,7 @@ type AuthStorage = {
 
 export type CreateHychatSupabaseClientOptions = {
   authStorage?: AuthStorage;
+  authStoragePath?: string;
 };
 
 export function createHychatSupabaseClient(

@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { App, AppShell, InputComposer, StatusBar } from './App.js';
+import { App, AppShell, InputComposer, StatusBar, StatusText, TopInfoPanel } from './App.js';
 import { createInitialAppState, type AppState } from './state.js';
 
 function collectText(node: React.ReactNode): string {
@@ -131,6 +131,38 @@ describe('App', () => {
     });
   });
 
+  it('reserves enough top panel height when no room is active', () => {
+    const shell = AppShell({
+      state: createInitialAppState(),
+      statusText: 'Use /start <nickname> [invite-code] to start.',
+      promptLabel: '>',
+      input: '',
+      cursorVisible: true,
+      height: 24
+    }) as React.ReactElement<{ children: React.ReactNode[] }>;
+    const topPanel = shell.props.children[0] as React.ReactElement<{ height?: number }>;
+    const text = collectText(topPanel);
+
+    expect(topPanel.props.height).toBe(5);
+    expect(text).toContain('HyChat No room');
+    expect(text).toContain('Members: -');
+    expect(text).toContain('Stocks: -');
+  });
+
+  it('renders multiple status lines so help output is visible', () => {
+    const status = StatusText({ text: 'Start\n/start [nickname]\nRooms\n/rooms' }) as React.ReactElement<{
+      height?: number;
+      children: React.ReactNode;
+    }>;
+    const text = collectText(status);
+
+    expect(status.props.height).toBe(4);
+    expect(text).toContain('Start');
+    expect(text).toContain('/start [nickname]');
+    expect(text).toContain('Rooms');
+    expect(text).toContain('/rooms');
+  });
+
   it('renders session details, members, and watched stocks in a compact status bar', () => {
     const state: AppState = {
       rooms: [{ id: 'room-1', name: 'Friends' }],
@@ -186,6 +218,76 @@ describe('App', () => {
     expect(text).toContain('AAPL.US');
     expect(text).toContain('+1.2%');
     expect(text).toContain('+2');
+  });
+
+  it('renders room members with role and selected color in the top panel', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {
+        'room-1': [
+          { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
+        ]
+      },
+      watchlistByRoom: {},
+      quotesBySymbol: {},
+      connectionStatus: 'connected'
+    };
+
+    const panel = TopInfoPanel({
+      state,
+      userLabel: 'liudong',
+      userRole: 'admin',
+      height: 7
+    });
+    const text = collectText(panel);
+    const textElements = collectTextElements(panel);
+    const liudong = textElements.find((element) => collectText(element) === 'liudong');
+    const alice = textElements.find((element) => collectText(element) === 'alice');
+
+    expect(text).toContain('(owner, rose)');
+    expect(text).toContain('(member, cyan)');
+    expect(text).toContain('(member, green)');
+    expect(liudong?.props.color).toMatch(/^#/);
+    expect(alice?.props.color).toMatch(/^#/);
+  });
+
+  it('summarizes extra room members in the top panel', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {
+        'room-1': [
+          { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' },
+          { roomId: 'room-1', userId: 'user-4', displayName: 'carol', displayColor: 'amber', role: 'member' },
+          { roomId: 'room-1', userId: 'user-5', displayName: 'dave', displayColor: 'blue', role: 'member' }
+        ]
+      },
+      watchlistByRoom: {},
+      quotesBySymbol: {},
+      connectionStatus: 'connected'
+    };
+
+    const panel = TopInfoPanel({
+      state,
+      userLabel: 'liudong',
+      userRole: 'admin',
+      height: 7
+    });
+    const text = collectText(panel);
+
+    expect(text).toContain('liudong');
+    expect(text).toContain('alice');
+    expect(text).toContain('bob');
+    expect(text).toContain('+2 more');
+    expect(text).not.toContain('carol');
+    expect(text).not.toContain('dave');
   });
 
   it('renders message sender names with their profile color', () => {

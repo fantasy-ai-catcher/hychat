@@ -8,13 +8,19 @@ import { render } from 'ink';
 import { createHychatService } from './app/hychat-service.js';
 import { createRealtimeAdapter } from './app/realtime-adapter.js';
 import { getDefaultDisplayName } from './app/default-display-name.js';
-import { getDefaultSessionPath, JsonFileStorage } from './app/session-storage.js';
+import {
+  getDefaultSessionPath,
+  getProfileSessionPath,
+  JsonFileStorage
+} from './app/session-storage.js';
 import { loadEnv, parseEnv } from './config/env.js';
 import { createHychatSupabaseClient } from './supabase/client.js';
 import { App } from './ui/App.js';
 
 export type RunCliOptions = {
   argv: string[];
+  homeDir?: string;
+  env?: Record<string, string | undefined>;
 };
 
 export type RuntimeDotenvOptions = {
@@ -100,15 +106,16 @@ export function loadRuntimeDotenv(options: RuntimeDotenvOptions = {}): string[] 
 
 export async function runCli(options: RunCliOptions): Promise<void> {
   const args = options.argv.slice(2);
+  const cliOptions = parseCliOptions(args);
 
-  if (args.includes('--version') || args.includes('-V')) {
+  if (cliOptions.version) {
     console.log(getCliVersion());
     return;
   }
 
-  if (args[0] === 'doctor') {
-    loadRuntimeDotenv();
-    const report = createDoctorReport();
+  if (cliOptions.command === 'doctor') {
+    loadRuntimeDotenv({ homeDir: options.homeDir, env: options.env });
+    const report = createDoctorReport(options.env);
     for (const line of report.lines) {
       console.log(line);
     }
@@ -117,20 +124,96 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   }
 
   try {
-    loadRuntimeDotenv();
-    const config = loadEnv();
+    loadRuntimeDotenv({ homeDir: options.homeDir, env: options.env });
+    const config = loadEnv(options.env);
+    const authStoragePath = cliOptions.profile
+      ? getProfileSessionPath(cliOptions.profile, options.homeDir)
+      : getDefaultSessionPath(options.homeDir);
+    const autoStartInviteCode =
+      cliOptions.inviteCode ??
+      (cliOptions.profile ? await createInviteCodeFromDefaultSession(config, options.homeDir) : undefined);
     const supabase = createHychatSupabaseClient(config, {
-      authStorage: new JsonFileStorage(getDefaultSessionPath())
+      authStorage: new JsonFileStorage(authStoragePath),
+      authStoragePath
     });
     const service = createHychatService(supabase);
     const realtime = createRealtimeAdapter(supabase);
 
-    render(React.createElement(App, { service, realtime, defaultDisplayName: getDefaultDisplayName() }));
+    render(
+      React.createElement(App, {
+        service,
+        realtime,
+        defaultDisplayName: getDefaultDisplayName(),
+        autoStartDisplayName: cliOptions.profile,
+        autoStartInviteCode
+      })
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start HyChat.';
     console.error(message);
     process.exitCode = 1;
   }
+}
+
+async function createInviteCodeFromDefaultSession(
+  config: ReturnType<typeof loadEnv>,
+  homeDir?: string
+): Promise<string | undefined> {
+  try {
+    const authStoragePath = getDefaultSessionPath(homeDir);
+    const supabase = createHychatSupabaseClient(config, {
+      authStorage: new JsonFileStorage(authStoragePath),
+      authStoragePath
+    });
+    return await createHychatService(supabase).createInviteCode();
+  } catch {
+    return undefined;
+  }
+}
+
+type ParsedCliOptions = {
+  command?: string;
+  profile?: string;
+  inviteCode?: string;
+  version: boolean;
+};
+
+function parseCliOptions(args: string[]): ParsedCliOptions {
+  const parsed: ParsedCliOptions = { version: false };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--version' || arg === '-V') {
+      parsed.version = true;
+      continue;
+    }
+
+    if (arg === '--profile') {
+      const profile = args[index + 1];
+      if (!profile) {
+        throw new Error('Usage: hychat --profile <name>');
+      }
+      parsed.profile = profile;
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--invite-code') {
+      const inviteCode = args[index + 1];
+      if (!inviteCode) {
+        throw new Error('Usage: hychat --invite-code <code>');
+      }
+      parsed.inviteCode = inviteCode;
+      index += 1;
+      continue;
+    }
+
+    if (!parsed.command) {
+      parsed.command = arg;
+    }
+  }
+
+  return parsed;
 }
 
 function isMissingFileError(error: unknown): boolean {
