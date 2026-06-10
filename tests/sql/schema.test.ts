@@ -88,6 +88,15 @@ describe('initial Supabase schema migration', () => {
     expect(migration).toContain('create or replace function public.list_room_members');
     expect(migration).toContain('grant execute on function public.list_room_members(uuid) to authenticated');
     expect(migration).toContain('security invoker');
+    expect(migration).toContain('display_color text');
+    expect(migration).toContain('sender_display_color text');
+    expect(migration).toContain('profiles_display_color_check');
+    expect(migration).toContain('messages_sender_display_color_check');
+    expect(migration).toContain('drop function if exists public.start_profile(text, text)');
+    expect(migration).toContain('grant execute on function public.start_profile(text, text) to authenticated');
+    expect(migration).toContain('drop function if exists public.list_room_members(uuid)');
+    expect(migration).toContain('create or replace function public.update_profile_color');
+    expect(migration).toContain('grant execute on function public.update_profile_color(text) to authenticated');
   });
 
   it('bounds message size and quote cache growth', () => {

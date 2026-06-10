@@ -40,6 +40,13 @@ describe('parseChatInput', () => {
     expect(parseChatInput('/invite-code')).toEqual({ type: 'command', name: 'invite-code' });
     expect(parseChatInput('/logout')).toEqual({ type: 'command', name: 'logout' });
     expect(parseChatInput('/help')).toEqual({ type: 'command', name: 'help' });
+    expect(parseChatInput('/color')).toEqual({ type: 'command', name: 'color-show' });
+    expect(parseChatInput('/color list')).toEqual({ type: 'command', name: 'color-list' });
+    expect(parseChatInput('/color set rose')).toEqual({
+      type: 'command',
+      name: 'color-set',
+      color: 'rose'
+    });
     expect(parseChatInput('/quit')).toEqual({ type: 'command', name: 'quit' });
   });
 
@@ -105,6 +112,14 @@ describe('parseChatInput', () => {
     expect(parseChatInput('/watch add')).toEqual({
       type: 'error',
       message: 'Usage: /watch add <symbol>'
+    });
+    expect(parseChatInput('/color nope')).toEqual({
+      type: 'error',
+      message: 'Usage: /color [list|set <color>]'
+    });
+    expect(parseChatInput('/color set')).toEqual({
+      type: 'error',
+      message: 'Usage: /color set <color>'
     });
   });
 });

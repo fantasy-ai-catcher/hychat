@@ -4,7 +4,13 @@ import { createChatSession } from './chat-session.js';
 
 function createService() {
   const calls: Array<{ method: string; args: unknown[] }> = [];
-  const user = { id: 'user-1', displayName: 'liudong', role: 'admin' as const, status: 'active' as const };
+  const user = {
+    id: 'user-1',
+    displayName: 'liudong',
+    displayColor: 'white',
+    role: 'admin' as const,
+    status: 'active' as const
+  };
   const room = { id: 'room-1', name: 'Friends' };
 
   return {
@@ -43,6 +49,7 @@ function createService() {
             room_id: roomId,
             user_id: 'user-1',
             display_name: 'liudong',
+            display_color: 'white',
             role: 'owner' as const,
             created_at: '2026-06-06T08:00:00.000Z'
           },
@@ -50,6 +57,7 @@ function createService() {
             room_id: roomId,
             user_id: 'user-2',
             display_name: 'alice',
+            display_color: 'rose',
             role: 'member' as const,
             created_at: '2026-06-06T08:01:00.000Z'
           }
@@ -63,6 +71,7 @@ function createService() {
             room_id: roomId,
             sender_id: 'user-1',
             sender_display_name: 'liudong',
+            sender_display_color: 'white',
             kind: 'text' as const,
             body: 'hello',
             created_at: '2026-06-06T08:00:00.000Z'
@@ -76,10 +85,16 @@ function createService() {
           room_id: room.id,
           sender_id: user.id,
           sender_display_name: user.displayName,
+          sender_display_color: user.displayColor,
           kind: 'text' as const,
           body: (input as { body: string }).body,
           created_at: '2026-06-06T08:02:00.000Z'
         };
+      },
+      async updateProfileColor(color: string) {
+        calls.push({ method: 'updateProfileColor', args: [color] });
+        user.displayColor = color;
+        return { ...user };
       },
       async listWatchlist(roomId: string) {
         calls.push({ method: 'listWatchlist', args: [roomId] });
@@ -118,6 +133,7 @@ describe('createChatSession', () => {
 
     expect(snapshot.user?.id).toBe('user-1');
     expect(snapshot.user?.displayName).toBe('liudong');
+    expect(snapshot.user?.displayColor).toBe('white');
     expect(snapshot.state.rooms).toEqual([{ id: 'room-1', name: 'Friends' }]);
     expect(calls).toEqual(
       expect.arrayContaining([
@@ -157,12 +173,14 @@ describe('createChatSession', () => {
         roomId: 'room-1',
         userId: 'user-1',
         displayName: 'liudong',
+        displayColor: 'white',
         role: 'owner'
       },
       {
         roomId: 'room-1',
         userId: 'user-2',
         displayName: 'alice',
+        displayColor: 'rose',
         role: 'member'
       }
     ]);
@@ -233,6 +251,24 @@ describe('createChatSession', () => {
     expect(snapshot.statusText).toBe('owner:liudong member:alice');
   });
 
+  it('shows and updates the current profile color', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    let snapshot = await session.handleLine('/color');
+    expect(snapshot.statusText).toContain('Current color: white');
+    expect(snapshot.statusText).toContain('1:red');
+
+    snapshot = await session.handleLine('/color set rose');
+
+    expect(snapshot.user?.displayColor).toBe('rose');
+    expect(snapshot.statusText).toBe('Color set to rose.');
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'updateProfileColor', args: ['rose'] }])
+    );
+  });
+
   it('shows command usage, parameters, and descriptions in help', async () => {
     const { service } = createService();
     const session = createChatSession({ service });
@@ -250,6 +286,7 @@ describe('createChatSession', () => {
     expect(snapshot.statusText).toContain('Add a stock');
     expect(snapshot.statusText).toContain('/refresh [symbol]');
     expect(snapshot.statusText).toContain('Refresh watched stock quotes');
+    expect(snapshot.statusText).toContain('/color set <color>');
     expect(snapshot.statusText).toContain('/quit');
   });
 
@@ -280,6 +317,7 @@ describe('createChatSession', () => {
           room_id: string;
           sender_id: string;
           sender_display_name?: string;
+          sender_display_color?: string;
           kind: 'text' | 'system';
           body: string;
           created_at: string;
@@ -303,6 +341,7 @@ describe('createChatSession', () => {
       room_id: 'room-1',
       sender_id: 'user-2',
       sender_display_name: 'test',
+      sender_display_color: 'rose',
       kind: 'text',
       body: 'from another terminal',
       created_at: '2026-06-06T08:02:00.000Z'
@@ -316,6 +355,7 @@ describe('createChatSession', () => {
               expect.objectContaining({
                 id: 'message-2',
                 senderName: 'test',
+                senderColor: 'rose',
                 body: 'from another terminal'
               })
             ])

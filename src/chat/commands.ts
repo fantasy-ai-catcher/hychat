@@ -14,6 +14,9 @@ export type ParsedChatInput =
   | WatchRemoveCommand
   | StockCommand
   | RefreshCommand
+  | ColorShowCommand
+  | ColorListCommand
+  | ColorSetCommand
   | HelpCommand
   | QuitCommand;
 
@@ -34,6 +37,9 @@ type WatchAddCommand = { type: 'command'; name: 'watch-add'; symbol: string };
 type WatchRemoveCommand = { type: 'command'; name: 'watch-remove'; symbol: string };
 type StockCommand = { type: 'command'; name: 'stock'; symbol: string };
 type RefreshCommand = { type: 'command'; name: 'refresh'; symbol?: string };
+type ColorShowCommand = { type: 'command'; name: 'color-show' };
+type ColorListCommand = { type: 'command'; name: 'color-list' };
+type ColorSetCommand = { type: 'command'; name: 'color-set'; color: string };
 type HelpCommand = { type: 'command'; name: 'help' };
 type QuitCommand = { type: 'command'; name: 'quit' };
 
@@ -95,6 +101,8 @@ export function parseChatInput(input: string): ParsedChatInput {
       return args[0]
         ? { type: 'command', name: 'refresh', symbol: args[0] }
         : { type: 'command', name: 'refresh' };
+    case '/color':
+      return parseColorCommand(args);
     default:
       return { type: 'error', message: `Unknown command: ${command}` };
   }
@@ -146,6 +154,28 @@ function parseWatchCommand(args: string[]): ParsedChatInput {
   }
 
   return { type: 'error', message: 'Usage: /watch <add|remove> <symbol>' };
+}
+
+function parseColorCommand(args: string[]): ParsedChatInput {
+  const [action, color, ...extra] = args;
+
+  if (!action) {
+    return { type: 'command', name: 'color-show' };
+  }
+
+  if (action === 'list' && !color) {
+    return { type: 'command', name: 'color-list' };
+  }
+
+  if (action === 'set') {
+    if (!color || extra.length > 0) {
+      return { type: 'error', message: 'Usage: /color set <color>' };
+    }
+
+    return { type: 'command', name: 'color-set', color };
+  }
+
+  return { type: 'error', message: 'Usage: /color [list|set <color>]' };
 }
 
 function requireArgument<T extends ParsedChatInput>(

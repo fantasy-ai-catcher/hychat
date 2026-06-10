@@ -1,6 +1,7 @@
 export type HychatUser = {
   id: string;
   displayName: string;
+  displayColor: string;
   role: 'admin' | 'member';
   status: 'active' | 'disabled';
 };
@@ -15,6 +16,7 @@ export type ChatMessageRow = {
   room_id: string;
   sender_id: string;
   sender_display_name?: string;
+  sender_display_color?: string;
   kind: 'text' | 'system';
   body: string;
   metadata?: Record<string, unknown>;
@@ -32,6 +34,7 @@ export type RoomMemberRow = {
   room_id: string;
   user_id: string;
   display_name?: string;
+  display_color?: string;
   role: 'owner' | 'member';
   created_at: string;
 };
@@ -72,6 +75,7 @@ type SupabaseLikeClient = {
 type ProfileRow = {
   id: string;
   display_name: string;
+  display_color?: string;
   role: 'admin' | 'member';
   status: 'active' | 'disabled';
 };
@@ -98,6 +102,18 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       const result = await supabase.rpc('start_profile', {
         target_display_name: displayName,
         invite_code: inviteCode ?? null
+      });
+      const profile = await ensureData<ProfileRow | ProfileRow[]>(result);
+      const row = Array.isArray(profile) ? profile[0] : profile;
+      if (!row) {
+        throw new Error('Supabase did not return a profile.');
+      }
+      return toHychatUser(row);
+    },
+
+    async updateProfileColor(color: string): Promise<HychatUser> {
+      const result = await supabase.rpc('update_profile_color', {
+        target_display_color: color
       });
       const profile = await ensureData<ProfileRow | ProfileRow[]>(result);
       const row = Array.isArray(profile) ? profile[0] : profile;
@@ -166,7 +182,7 @@ export function createHychatService(supabase: SupabaseLikeClient) {
     async listRecentMessages(roomId: string, limit = 50): Promise<ChatMessageRow[]> {
       const result = await supabase
         .from('messages')
-        .select('id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at')
+        .select('id,room_id,sender_id,sender_display_name,sender_display_color,kind,body,metadata,created_at')
         .eq('room_id', roomId)
         .order('created_at', { ascending: false })
         .limit(limit);
@@ -184,7 +200,7 @@ export function createHychatService(supabase: SupabaseLikeClient) {
           body: input.body,
           metadata: {}
         })
-        .select('id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at');
+        .select('id,room_id,sender_id,sender_display_name,sender_display_color,kind,body,metadata,created_at');
       const selected = typeof result.single === 'function' ? result.single() : result;
       const message = await ensureData<ChatMessageRow | ChatMessageRow[]>(selected);
       return Array.isArray(message) ? message[0] : message;
@@ -253,7 +269,7 @@ async function getProfile(
 ): Promise<ProfileRow | null> {
   const query = supabase
     .from('profiles')
-    .select('id,display_name,role,status')
+    .select('id,display_name,display_color,role,status')
     .eq('id', userId);
   const result =
     typeof query.maybeSingle === 'function'
@@ -280,6 +296,7 @@ function toHychatUser(profile: ProfileRow): HychatUser {
   return {
     id: profile.id,
     displayName: profile.display_name,
+    displayColor: profile.display_color ?? 'white',
     role: profile.role,
     status: profile.status
   };

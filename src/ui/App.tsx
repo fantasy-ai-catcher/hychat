@@ -6,6 +6,7 @@ import {
   type ChatSessionSnapshot,
   type CreateChatSessionOptions
 } from '../app/chat-session.js';
+import { resolveProfileColor } from '../app/profile-colors.js';
 import type { AppState } from './state.js';
 import { createInitialAppState } from './state.js';
 
@@ -118,6 +119,7 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
   });
 
   const activeState = fixedState ?? snapshot.state;
+  const terminalRows = process.stdout.rows;
 
   return (
     <AppShell
@@ -128,6 +130,7 @@ export function App({ state: fixedState, service, realtime, defaultDisplayName }
       promptLabel=">"
       input={input}
       cursorVisible={cursorVisible}
+      height={terminalRows}
     />
   );
 }
@@ -140,38 +143,119 @@ type AppShellProps = {
   promptLabel: string;
   input: string;
   cursorVisible: boolean;
+  height?: number;
 };
 
-function AppShell({
+export function AppShell({
   state,
   statusText,
   userLabel,
   userRole,
   promptLabel,
   input,
-  cursorVisible
+  cursorVisible,
+  height
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const messages = roomId ? state.messagesByRoom[roomId] ?? [] : [];
+  const shellHeight = Math.max(height ?? process.stdout.rows ?? 24, 12);
+  const topHeight = roomId ? 5 : 3;
+  const bottomHeight = 5;
+  const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
 
   return (
-    <Box flexDirection="column">
-      <Text>HyChat</Text>
-      <Box flexDirection="column" flexGrow={1}>
-        {messages.length === 0 ? (
-          <Text dimColor>No messages</Text>
-        ) : (
-          messages.map((message) => (
-            <Text key={message.id}>
-              {message.senderName ?? message.senderId}: {message.body}
-            </Text>
-          ))
-        )}
+    <Box flexDirection="column" height={shellHeight}>
+      {TopInfoPanel({ state, userLabel, userRole, height: topHeight })}
+      {MessageViewport({ messages: messages.slice(-chatHeight), height: chatHeight })}
+      <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
+        <StatusText text={statusText} />
+        <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
+        <StatusBar state={state} userLabel={userLabel} userRole={userRole} />
       </Box>
-      <Text dimColor>{statusText}</Text>
-      <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
-      <StatusBar state={state} userLabel={userLabel} userRole={userRole} />
+    </Box>
+  );
+}
+
+export type TopInfoPanelProps = {
+  state: AppState;
+  userLabel?: string;
+  userRole?: string;
+  height?: number;
+};
+
+export function TopInfoPanel({ state, userLabel, userRole, height }: TopInfoPanelProps) {
+  const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
+  const roomId = activeRoom?.id;
+  const members = roomId ? state.membersByRoom[roomId] ?? [] : [];
+  const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
+
+  return (
+    <Box
+      flexDirection="column"
+      borderStyle="single"
+      borderColor="gray"
+      paddingX={1}
+      height={height}
+      flexShrink={0}
+    >
+      <Text bold>
+        HyChat {activeRoom ? `# ${activeRoom.name}` : 'No room'}{' '}
+        <Text dimColor>
+          {userLabel ?? '-'} {userRole ?? '-'} {state.connectionStatus}
+        </Text>
+      </Text>
+      <Text>
+        Members:{' '}
+        {members.length > 0
+          ? members.map((member) => member.displayName ?? member.userId).join(', ')
+          : '-'}
+      </Text>
+      <Text>
+        Stocks:{' '}
+        {symbols.length > 0
+          ? symbols
+              .map((symbol) => {
+                const quote = state.quotesBySymbol[symbol];
+                const price = quote?.price === undefined ? '-' : quote.price;
+                return `${symbol} ${price} ${formatQuoteChange(quote?.changePercent)}`;
+              })
+              .join(' | ')
+          : '-'}
+      </Text>
+    </Box>
+  );
+}
+
+export type MessageViewportProps = {
+  messages: NonNullable<AppState['messagesByRoom'][string]>;
+  height: number;
+};
+
+export function MessageViewport({ messages, height }: MessageViewportProps) {
+  return (
+    <Box flexDirection="column" height={height} flexGrow={1} overflow="hidden">
+      {messages.length === 0 ? (
+        <Text dimColor>No messages</Text>
+      ) : (
+        messages.map((message) => (
+          <Box key={message.id} flexDirection="row">
+            <Text color={resolveProfileColor(message.senderColor)}>
+              {message.senderName ?? message.senderId}:
+            </Text>
+            <Text> {message.body}</Text>
+          </Box>
+        ))
+      )}
+    </Box>
+  );
+}
+
+export function StatusText({ text }: { text: string }) {
+  const firstLine = text.split('\n')[0] ?? '';
+  return (
+    <Box height={1} overflow="hidden" flexShrink={0}>
+      <Text dimColor>{firstLine}</Text>
     </Box>
   );
 }

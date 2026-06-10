@@ -8,6 +8,7 @@ function createMockSupabase() {
   const profile = {
     id: 'user-1',
     display_name: 'liudong',
+    display_color: 'white',
     role: 'admin',
     status: 'active'
   };
@@ -55,6 +56,7 @@ function createMockSupabase() {
             room_id: 'room-1',
             sender_id: 'user-1',
             sender_display_name: 'liudong',
+            sender_display_color: 'white',
             kind: 'text',
             body: 'hello',
             metadata: {},
@@ -104,6 +106,12 @@ function createMockSupabase() {
         if (name === 'create_invite_code') {
           return Promise.resolve({ data: 'invite123', error: null });
         }
+        if (name === 'update_profile_color') {
+          return Promise.resolve({
+            data: [{ ...profile, display_color: (args as { target_display_color: string }).target_display_color }],
+            error: null
+          });
+        }
         if (name === 'list_room_members') {
           return Promise.resolve({
             data: [
@@ -111,6 +119,7 @@ function createMockSupabase() {
                 room_id: 'room-1',
                 user_id: 'user-1',
                 display_name: 'liudong',
+                display_color: 'white',
                 role: 'owner',
                 created_at: '2026-06-06T08:00:00.000Z'
               }
@@ -153,6 +162,7 @@ describe('createHychatService', () => {
     await expect(service.startProfile('liudong', 'invite123')).resolves.toEqual({
       id: 'user-1',
       displayName: 'liudong',
+      displayColor: 'white',
       role: 'admin',
       status: 'active'
     });
@@ -166,6 +176,28 @@ describe('createHychatService', () => {
             'start_profile',
             { target_display_name: 'liudong', invite_code: 'invite123' }
           ]
+        }
+      ])
+    );
+  });
+
+  it('updates the current profile color through RPC', async () => {
+    const { supabase, calls } = createMockSupabase();
+    const service = createHychatService(supabase);
+
+    await expect(service.updateProfileColor('rose')).resolves.toEqual({
+      id: 'user-1',
+      displayName: 'liudong',
+      displayColor: 'rose',
+      role: 'admin',
+      status: 'active'
+    });
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          method: 'rpc',
+          args: ['update_profile_color', { target_display_color: 'rose' }]
         }
       ])
     );
@@ -238,6 +270,7 @@ describe('createHychatService', () => {
       room_id: 'room-1',
       sender_id: 'user-1',
       sender_display_name: 'liudong',
+      sender_display_color: 'white',
       kind: 'text',
       body: 'hello',
       metadata: {},
@@ -261,7 +294,7 @@ describe('createHychatService', () => {
         },
         {
           method: 'select',
-          args: ['id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at']
+          args: ['id,room_id,sender_id,sender_display_name,sender_display_color,kind,body,metadata,created_at']
         },
         { method: 'single', args: [] }
       ])
@@ -278,6 +311,7 @@ describe('createHychatService', () => {
         room_id: 'room-1',
         user_id: 'user-1',
         display_name: 'liudong',
+        display_color: 'white',
         role: 'owner',
         created_at: '2026-06-06T08:00:00.000Z'
       }

@@ -152,6 +152,16 @@ hello from account one
 /stock TSLA.US
 ```
 
+昵称颜色验收：
+
+```text
+/color
+/color list
+/color set rose
+```
+
+设置后，新的聊天消息里昵称会使用对应颜色展示。可选颜色保存在 `profiles.display_color`，历史消息会保留发送时的颜色。
+
 退出登录：
 
 ```text

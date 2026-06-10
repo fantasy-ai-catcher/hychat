@@ -15,6 +15,10 @@ import type {
   RoomSummary as ServiceRoomSummary,
   WatchlistRow
 } from './hychat-service.js';
+import {
+  formatProfileColorList,
+  isProfileColorName
+} from './profile-colors.js';
 
 type QuoteApiResult = {
   quotes?: Array<{
@@ -30,6 +34,7 @@ type MemberRow = {
   room_id: string;
   user_id: string;
   display_name?: string;
+  display_color?: string;
   role: 'owner' | 'member';
   created_at?: string;
 };
@@ -37,6 +42,7 @@ type MemberRow = {
 type ChatServiceLike = {
   getCurrentUser: () => Promise<HychatUser | null>;
   startProfile: (displayName: string, inviteCode?: string) => Promise<HychatUser>;
+  updateProfileColor: (color: string) => Promise<HychatUser>;
   signOut: () => Promise<void>;
   createInviteCode: () => Promise<string>;
   listRooms: () => Promise<ServiceRoomSummary[]>;
@@ -155,6 +161,23 @@ const helpSections = [
       {
         usage: '/refresh [symbol]',
         description: 'Refresh watched stock quotes, or one symbol when provided.'
+      }
+    ]
+  },
+  {
+    title: 'Profile',
+    commands: [
+      {
+        usage: '/color',
+        description: 'Show your current profile color and the selectable palette.'
+      },
+      {
+        usage: '/color list',
+        description: 'Show all selectable profile colors.'
+      },
+      {
+        usage: '/color set <color>',
+        description: 'Set the color used for your name in chat.'
       }
     ]
   },
@@ -398,6 +421,29 @@ export function createChatSession(options: CreateChatSessionOptions) {
         return;
       }
 
+      case 'color-show': {
+        const currentUser = requireUser();
+        statusText = `Current color: ${currentUser.displayColor}\n${formatProfileColorList()}`;
+        return;
+      }
+
+      case 'color-list':
+        requireUser();
+        statusText = formatProfileColorList();
+        return;
+
+      case 'color-set': {
+        requireUser();
+        if (!isProfileColorName(command.color)) {
+          statusText = `Unknown color: ${command.color}\n${formatProfileColorList()}`;
+          return;
+        }
+
+        user = await options.service.updateProfileColor(command.color);
+        statusText = `Color set to ${user.displayColor}.`;
+        return;
+      }
+
       case 'help':
         statusText = helpText;
         return;
@@ -491,6 +537,7 @@ function toChatMessage(message: ChatMessageRow): ChatMessage {
     roomId: message.room_id,
     senderId: message.sender_id,
     senderName: message.sender_display_name ?? message.sender_id,
+    senderColor: message.sender_display_color,
     body: message.body,
     createdAt: message.created_at
   };
@@ -501,6 +548,7 @@ function toRoomMemberSummary(member: MemberRow): RoomMemberSummary {
     roomId: member.room_id,
     userId: member.user_id,
     displayName: member.display_name,
+    displayColor: member.display_color,
     role: member.role
   };
 }

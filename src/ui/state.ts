@@ -8,6 +8,7 @@ export type ChatMessage = {
   roomId: string;
   senderId: string;
   senderName?: string;
+  senderColor?: string;
   body: string;
   createdAt: string;
 };
@@ -16,6 +17,7 @@ export type RoomMemberSummary = {
   roomId: string;
   userId: string;
   displayName?: string;
+  displayColor?: string;
   role: 'owner' | 'member';
 };
 
