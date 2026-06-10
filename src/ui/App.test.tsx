@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { App, InfoPanel, InputComposer } from './App.js';
+import { App, InputComposer, StatusBar } from './App.js';
 import { createInitialAppState, type AppState } from './state.js';
 
 function collectText(node: React.ReactNode): string {
@@ -96,7 +96,7 @@ describe('App', () => {
     });
   });
 
-  it('renders session details, members, and watched stocks in one info panel', () => {
+  it('renders session details, members, and watched stocks in a compact status bar', () => {
     const state: AppState = {
       rooms: [{ id: 'room-1', name: 'Friends' }],
       activeRoomId: 'room-1',
@@ -104,10 +104,11 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', role: 'member' }
         ]
       },
-      watchlistByRoom: { 'room-1': ['AAPL.US'] },
+      watchlistByRoom: { 'room-1': ['AAPL.US', '0700.HK', '600519.CN'] },
       quotesBySymbol: {
         'AAPL.US': {
           symbol: 'AAPL.US',
@@ -119,24 +120,24 @@ describe('App', () => {
       connectionStatus: 'connected'
     };
 
-    const panel = InfoPanel({
+    const bar = StatusBar({
       state,
       userLabel: 'liudong',
       userRole: 'admin'
-    }) as React.ReactElement<{ borderStyle?: string; width?: number }>;
-    const text = collectText(panel);
+    }) as React.ReactElement<{ borderStyle?: string; children: React.ReactNode }>;
+    const text = collectText(bar);
 
-    expect(panel.props.borderStyle).toBe('round');
-    expect(panel.props.width).toBeGreaterThanOrEqual(30);
-    expect(text).toContain('account');
+    expect(bar.props.borderStyle).toBeUndefined();
     expect(text).toContain('liudong');
     expect(text).toContain('admin');
-    expect(text).toContain('room');
     expect(text).toContain('Friends');
-    expect(text).toContain('Members');
+    expect(text).toContain('connected');
+    expect(text).toContain('members');
     expect(text).toContain('alice');
-    expect(text).toContain('Stocks');
+    expect(text).toContain('+1');
+    expect(text).toContain('stocks');
     expect(text).toContain('AAPL.US');
-    expect(text).toContain('1.2%');
+    expect(text).toContain('+1.2%');
+    expect(text).toContain('+2');
   });
 });

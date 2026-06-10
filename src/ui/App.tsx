@@ -150,68 +150,53 @@ function AppShell({
   return (
     <Box flexDirection="column">
       <Text>HyChat</Text>
-      <Box flexDirection="row" gap={2}>
-        <Box flexDirection="column" flexGrow={1}>
-          {messages.length === 0 ? (
-            <Text dimColor>No messages</Text>
-          ) : (
-            messages.map((message) => (
-              <Text key={message.id}>
-                {message.senderName ?? message.senderId}: {message.body}
-              </Text>
-            ))
-          )}
-        </Box>
-        <InfoPanel state={state} userLabel={userLabel} userRole={userRole} />
+      <Box flexDirection="column" flexGrow={1}>
+        {messages.length === 0 ? (
+          <Text dimColor>No messages</Text>
+        ) : (
+          messages.map((message) => (
+            <Text key={message.id}>
+              {message.senderName ?? message.senderId}: {message.body}
+            </Text>
+          ))
+        )}
       </Box>
       <Text dimColor>{statusText}</Text>
       <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
+      <StatusBar state={state} userLabel={userLabel} userRole={userRole} />
     </Box>
   );
 }
 
-export type InfoPanelProps = {
+export type StatusBarProps = {
   state: AppState;
   userLabel?: string;
   userRole?: string;
 };
 
-export function InfoPanel({ state, userLabel, userRole }: InfoPanelProps) {
+export function StatusBar({ state, userLabel, userRole }: StatusBarProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const members = roomId ? state.membersByRoom[roomId] ?? [] : [];
   const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
+  const memberSummary = summarizeItems(
+    members.map((member) => member.displayName ?? member.userId),
+    2
+  );
+  const stockSummary = summarizeItems(
+    symbols.map((symbol) => {
+      const quote = state.quotesBySymbol[symbol];
+      return `${symbol} ${formatQuoteChange(quote?.changePercent)}`;
+    }),
+    1
+  );
 
   return (
-    <Box borderStyle="round" borderColor="gray" flexDirection="column" paddingX={1} width={34}>
-      <Text color="cyan">Session</Text>
-      <Text>account  {userLabel ?? '-'}</Text>
-      <Text>role     {userRole ?? '-'}</Text>
-      <Text>room     {activeRoom?.name ?? '-'}</Text>
-      <Text>status   {state.connectionStatus}</Text>
-      <Text color="cyan">Members</Text>
-      {members.length === 0 ? (
-        <Text dimColor>-</Text>
-      ) : (
-        members.map((member) => (
-          <Text key={member.userId}>
-            {member.displayName ?? member.userId}  {member.role}
-          </Text>
-        ))
-      )}
-      <Text color="cyan">Stocks</Text>
-      {symbols.length === 0 ? (
-        <Text dimColor>-</Text>
-      ) : (
-        symbols.map((symbol) => {
-          const quote = state.quotesBySymbol[symbol];
-          return (
-            <Text key={symbol}>
-              {symbol}  {quote?.price ?? '-'}  {formatQuoteChange(quote?.changePercent)}
-            </Text>
-          );
-        })
-      )}
+    <Box flexDirection="row" flexShrink={0}>
+      <Text dimColor>
+        {userLabel ?? '-'} {userRole ?? '-'} | room {activeRoom?.name ?? '-'} |{' '}
+        {state.connectionStatus} | members {memberSummary} | stocks {stockSummary}
+      </Text>
     </Box>
   );
 }
@@ -238,4 +223,14 @@ function formatQuoteChange(changePercent: number | undefined): string {
   }
 
   return `${changePercent > 0 ? '+' : ''}${changePercent}%`;
+}
+
+function summarizeItems(items: string[], visibleCount: number): string {
+  if (items.length === 0) {
+    return '-';
+  }
+
+  const visible = items.slice(0, visibleCount).join(', ');
+  const hiddenCount = items.length - visibleCount;
+  return hiddenCount > 0 ? `${visible} +${hiddenCount}` : visible;
 }
