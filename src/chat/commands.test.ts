@@ -38,7 +38,25 @@ describe('parseChatInput', () => {
       inviteCode: 'invite123'
     });
     expect(parseChatInput('/invite-code')).toEqual({ type: 'command', name: 'invite-code' });
+    expect(parseChatInput('/invite-code list')).toEqual({
+      type: 'command',
+      name: 'invite-code-list'
+    });
+    expect(parseChatInput('/invite-code revoke abc123')).toEqual({
+      type: 'command',
+      name: 'invite-code-revoke',
+      code: 'abc123'
+    });
+    expect(parseChatInput('/invite-code revoke')).toEqual({
+      type: 'error',
+      message: 'Usage: /invite-code [list|revoke <code>]'
+    });
     expect(parseChatInput('/logout')).toEqual({ type: 'command', name: 'logout' });
+    expect(parseChatInput('/logout confirm')).toEqual({
+      type: 'command',
+      name: 'logout',
+      confirmed: true
+    });
     expect(parseChatInput('/help')).toEqual({ type: 'command', name: 'help' });
     expect(parseChatInput('/color')).toEqual({ type: 'command', name: 'color-show' });
     expect(parseChatInput('/color list')).toEqual({ type: 'command', name: 'color-list' });

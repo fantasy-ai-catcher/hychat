@@ -106,6 +106,23 @@ function createMockSupabase() {
         if (name === 'create_invite_code') {
           return Promise.resolve({ data: 'invite123', error: null });
         }
+        if (name === 'list_invite_codes') {
+          return Promise.resolve({
+            data: [
+              {
+                code: 'invite123',
+                room_name: 'Friends',
+                used_by_display_name: null,
+                used_at: null,
+                expires_at: '2026-07-10T00:00:00.000Z'
+              }
+            ],
+            error: null
+          });
+        }
+        if (name === 'revoke_invite_code') {
+          return Promise.resolve({ data: true, error: null });
+        }
         if (name === 'update_profile_color') {
           return Promise.resolve({
             data: [{ ...profile, display_color: (args as { target_display_color: string }).target_display_color }],
@@ -228,6 +245,7 @@ describe('createHychatService', () => {
     const service = createHychatService(supabase);
 
     await service.createInviteCode();
+    await service.createInviteCode('room-1');
     await service.inviteMember('room-1', 'alice');
     await service.getQuotes(['AAPL.US'], false);
 
@@ -237,7 +255,14 @@ describe('createHychatService', () => {
           method: 'rpc',
           args: [
             'create_invite_code',
-            {}
+            { target_room_id: null }
+          ]
+        },
+        {
+          method: 'rpc',
+          args: [
+            'create_invite_code',
+            { target_room_id: 'room-1' }
           ]
         },
         {
@@ -251,6 +276,23 @@ describe('createHychatService', () => {
           method: 'invoke',
           args: ['get-stock-quotes', { body: { symbols: ['AAPL.US'], force: false } }]
         }
+      ])
+    );
+  });
+
+  it('lists and revokes invite codes through RPC', async () => {
+    const { supabase, calls } = createMockSupabase();
+    const service = createHychatService(supabase);
+
+    await expect(service.listInviteCodes()).resolves.toEqual([
+      expect.objectContaining({ code: 'invite123', room_name: 'Friends' })
+    ]);
+    await service.revokeInviteCode('invite123');
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'rpc', args: ['list_invite_codes', {}] },
+        { method: 'rpc', args: ['revoke_invite_code', { target_code: 'invite123' }] }
       ])
     );
   });

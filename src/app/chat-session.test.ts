@@ -27,9 +27,31 @@ function createService() {
       async signOut() {
         calls.push({ method: 'signOut', args: [] });
       },
-      async createInviteCode() {
-        calls.push({ method: 'createInviteCode', args: [] });
+      async createInviteCode(roomId?: string) {
+        calls.push({ method: 'createInviteCode', args: [roomId] });
         return 'invite123';
+      },
+      async listInviteCodes() {
+        calls.push({ method: 'listInviteCodes', args: [] });
+        return [
+          {
+            code: 'invite123',
+            room_name: 'Friends',
+            used_by_display_name: null,
+            used_at: null,
+            expires_at: '2026-07-10T00:00:00.000Z'
+          },
+          {
+            code: 'used456',
+            room_name: null,
+            used_by_display_name: 'alice',
+            used_at: '2026-06-09T00:00:00.000Z',
+            expires_at: '2026-07-09T00:00:00.000Z'
+          }
+        ];
+      },
+      async revokeInviteCode(code: string) {
+        calls.push({ method: 'revokeInviteCode', args: [code] });
       },
       async listRooms() {
         calls.push({ method: 'listRooms', args: [] });
@@ -143,6 +165,57 @@ describe('createChatSession', () => {
     );
   });
 
+  it('auto-starts a named local profile when no session exists', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service, autoStartDisplayName: 'test' });
+
+    const snapshot = await session.initialize();
+
+    expect(snapshot.user?.displayName).toBe('liudong');
+    expect(snapshot.statusText).toBe('Started as liudong (admin).');
+    expect(snapshot.state.rooms).toEqual([{ id: 'room-1', name: 'Friends' }]);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'getCurrentUser', args: [] },
+        { method: 'startProfile', args: ['test', undefined] },
+        { method: 'listRooms', args: [] }
+      ])
+    );
+  });
+
+  it('uses the invite code when auto-starting a named local profile', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({
+      service,
+      autoStartDisplayName: 'test',
+      autoStartInviteCode: 'invite123'
+    });
+
+    await session.initialize();
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'startProfile', args: ['test', 'invite123'] }
+      ])
+    );
+  });
+
+  it('keeps running when auto-start requires an invite code', async () => {
+    const { service } = createService();
+    service.startProfile = async () => {
+      throw new Error('invite_code_required');
+    };
+    const session = createChatSession({ service, autoStartDisplayName: 'liudong' });
+
+    const snapshot = await session.initialize();
+
+    expect(snapshot.user).toBeNull();
+    expect(snapshot.statusText).toBe(
+      'Profile liudong needs an invite code. Run /start liudong <invite-code>.'
+    );
+    expect(snapshot.shouldExit).toBe(false);
+  });
+
   it('starts with an invite code and can create an invite code as admin', async () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
@@ -152,13 +225,74 @@ describe('createChatSession', () => {
 
     snapshot = await session.handleLine('/invite-code');
 
-    expect(snapshot.statusText).toBe('Invite code: invite123');
+    expect(snapshot.statusText).toBe(
+      'Invite code: invite123 (activates a profile; share it with one friend)'
+    );
     expect(calls).toEqual(
       expect.arrayContaining([
         { method: 'startProfile', args: ['alice', 'invite123'] },
-        { method: 'createInviteCode', args: [] }
+        { method: 'createInviteCode', args: [undefined] }
       ])
     );
+  });
+
+  it('creates a room-bound invite code when a room is active', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    await session.handleLine('/join Friends');
+    const snapshot = await session.handleLine('/invite-code');
+
+    expect(snapshot.statusText).toBe(
+      'Invite code: invite123 (activates a profile and joins Friends)'
+    );
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'createInviteCode', args: ['room-1'] }])
+    );
+  });
+
+  it('lists and revokes invite codes', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    let snapshot = await session.handleLine('/invite-code list');
+
+    expect(snapshot.statusText).toContain('invite123');
+    expect(snapshot.statusText).toContain('room:Friends');
+    expect(snapshot.statusText).toContain('unused');
+    expect(snapshot.statusText).toContain('used456');
+    expect(snapshot.statusText).toContain('used by alice');
+
+    snapshot = await session.handleLine('/invite-code revoke invite123');
+
+    expect(snapshot.statusText).toBe('Invite code invite123 revoked.');
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'listInviteCodes', args: [] },
+        { method: 'revokeInviteCode', args: ['invite123'] }
+      ])
+    );
+  });
+
+  it('requires explicit confirmation before logout destroys the local account', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    let snapshot = await session.handleLine('/logout');
+
+    expect(snapshot.statusText).toContain('cannot be recovered');
+    expect(snapshot.statusText).toContain('/logout confirm');
+    expect(snapshot.user?.id).toBe('user-1');
+    expect(calls.some((call) => call.method === 'signOut')).toBe(false);
+
+    snapshot = await session.handleLine('/logout confirm');
+
+    expect(snapshot.statusText).toBe('Signed out.');
+    expect(snapshot.user).toBeNull();
+    expect(calls.some((call) => call.method === 'signOut')).toBe(true);
   });
 
   it('creates a room, joins it, sends messages, and refreshes watched quotes', async () => {
@@ -240,7 +374,7 @@ describe('createChatSession', () => {
     ]);
   });
 
-  it('shows member nicknames in the members command', async () => {
+  it('shows member nicknames and colors in the members command', async () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
@@ -248,7 +382,7 @@ describe('createChatSession', () => {
     await session.handleLine('/join Friends');
     const snapshot = await session.handleLine('/members');
 
-    expect(snapshot.statusText).toBe('owner:liudong member:alice');
+    expect(snapshot.statusText).toBe('owner:liudong(white) member:alice(rose)');
   });
 
   it('shows and updates the current profile color', async () => {
@@ -304,7 +438,47 @@ describe('createChatSession', () => {
       'room-1',
       expect.objectContaining({
         onMessage: expect.any(Function),
-        onWatchlistChange: expect.any(Function)
+        onWatchlistChange: expect.any(Function),
+        onQuoteChange: expect.any(Function)
+      })
+    );
+  });
+
+  it('applies realtime quote updates to the visible quote map', async () => {
+    const { service } = createService();
+    let quoteHandler:
+      | ((quote: {
+          canonical_symbol: string;
+          price?: number | null;
+          change_percent?: number | null;
+        }) => void)
+      | undefined;
+    const onSnapshotChange = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        quoteHandler = handlers.onQuoteChange;
+        return { unsubscribe: vi.fn() };
+      })
+    };
+    const session = createChatSession({ service, realtime, onSnapshotChange });
+
+    await session.handleLine('/start liudong');
+    await session.handleLine('/join Friends');
+    onSnapshotChange.mockClear();
+
+    quoteHandler?.({
+      canonical_symbol: 'AAPL.US',
+      price: 222.5,
+      change_percent: 2.1
+    });
+
+    expect(onSnapshotChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          quotesBySymbol: expect.objectContaining({
+            'AAPL.US': expect.objectContaining({ price: 222.5, changePercent: 2.1 })
+          })
+        })
       })
     );
   });

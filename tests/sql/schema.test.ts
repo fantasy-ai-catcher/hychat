@@ -28,6 +28,21 @@ const fixInviteCodeMigration = readFileSync(
   'utf8'
 ).toLowerCase();
 
+const hardenAccessMigration = readFileSync(
+  'supabase/migrations/20260610190000_harden_access_and_cleanup.sql',
+  'utf8'
+).toLowerCase();
+
+const minimumGrantsMigration = readFileSync(
+  'supabase/migrations/20260610191500_minimum_data_api_grants.sql',
+  'utf8'
+).toLowerCase();
+
+const roomInvitesMigration = readFileSync(
+  'supabase/migrations/20260610200000_room_invites_and_quota_guards.sql',
+  'utf8'
+).toLowerCase();
+
 describe('initial Supabase schema migration', () => {
   it('creates the core chat and stock tables', () => {
     for (const table of [
@@ -109,6 +124,60 @@ describe('initial Supabase schema migration', () => {
   it('adds cleanup functions for free-tier storage control', () => {
     expect(migration).toContain('create or replace function public.cleanup_old_messages');
     expect(migration).toContain('create or replace function public.cleanup_orphan_stock_quotes');
+  });
+
+  it('hardens grants, cleanup, and admin bootstrap', () => {
+    expect(hardenAccessMigration).toContain(
+      'revoke update, delete on public.messages from authenticated'
+    );
+    expect(hardenAccessMigration).toContain(
+      'revoke update on public.room_members from authenticated'
+    );
+    expect(hardenAccessMigration).toContain(
+      'revoke all on function public.cleanup_old_messages(int) from public'
+    );
+    expect(hardenAccessMigration).toContain(
+      'revoke all on function public.cleanup_orphan_stock_quotes() from public'
+    );
+    expect(hardenAccessMigration).toContain('and rn > message_retention_min_count');
+    expect(hardenAccessMigration).toContain('if active_profile_count = 0 then');
+    expect(hardenAccessMigration).not.toContain('invite_code_count = 0');
+    expect(hardenAccessMigration).toContain('display_name_taken');
+  });
+
+  it('adds room-bound invites, rate limiting, and quote realtime', () => {
+    expect(roomInvitesMigration).toContain(
+      'alter publication supabase_realtime add table public.stock_quotes'
+    );
+    expect(roomInvitesMigration).toContain(
+      'add column if not exists room_id uuid references public.rooms(id)'
+    );
+    expect(roomInvitesMigration).toContain(
+      'create or replace function public.create_invite_code(target_room_id uuid default null)'
+    );
+    expect(roomInvitesMigration).toContain('create or replace function public.list_invite_codes');
+    expect(roomInvitesMigration).toContain('create or replace function public.revoke_invite_code');
+    expect(roomInvitesMigration).toContain('invite_record.room_id is not null');
+    expect(roomInvitesMigration).toContain('on conflict (room_id, user_id) do nothing');
+    expect(roomInvitesMigration).toContain('enforce_message_rate_limit');
+    expect(roomInvitesMigration).toContain("raise exception 'rate_limited'");
+    expect(roomInvitesMigration).toContain('cleanup_orphan_anonymous_users');
+    expect(roomInvitesMigration).toContain(
+      'revoke all on function private.cleanup_orphan_anonymous_users(interval) from authenticated'
+    );
+  });
+
+  it('resets legacy blanket grants to the policy-backed minimum', () => {
+    expect(minimumGrantsMigration).toContain(
+      'revoke all on all tables in schema public from anon'
+    );
+    expect(minimumGrantsMigration).toContain(
+      'revoke all on all tables in schema public from authenticated'
+    );
+    expect(minimumGrantsMigration).toContain('grant select, insert on public.messages to authenticated');
+    expect(minimumGrantsMigration).toContain('grant select on public.stock_quotes to authenticated');
+    expect(minimumGrantsMigration).toContain('alter default privileges for role postgres in schema public');
+    expect(minimumGrantsMigration).not.toContain('to anon;');
   });
 
   it('enables realtime replication for chat messages and watchlist changes', () => {

@@ -24,8 +24,10 @@ type RoomMessageChange = {
   room_id: string;
   sender_id: string;
   sender_display_name?: string;
+  sender_display_color?: string;
   kind: 'text' | 'system';
   body: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
 };
 
@@ -36,6 +38,14 @@ type WatchlistChange = {
   created_at?: string;
 };
 
+type StockQuoteChange = {
+  canonical_symbol: string;
+  price?: number | null;
+  change_percent?: number | null;
+  status?: string;
+  updated_at?: string;
+};
+
 type SupabaseRealtimeClient = {
   channel: (topic: string) => any;
 };
@@ -44,6 +54,7 @@ export type RoomRealtimeOptions = {
   roomId: string;
   onMessage: (message: RoomMessageChange) => void;
   onWatchlistChange: (change: WatchlistChange) => void;
+  onQuoteChange?: (quote: StockQuoteChange) => void;
   onStatus?: (status: string) => void;
 };
 
@@ -74,6 +85,18 @@ export function subscribeToRoomRealtime(
       },
       (payload: RealtimePayload<Record<string, unknown>>) =>
         options.onWatchlistChange(payload.new as WatchlistChange)
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        // RLS already limits quote rows to symbols on the member's
+        // watchlists, so no room filter is possible or needed here.
+        table: 'stock_quotes'
+      },
+      (payload: RealtimePayload<Record<string, unknown>>) =>
+        options.onQuoteChange?.(payload.new as StockQuoteChange)
     );
 
   channel.subscribe(options.onStatus);

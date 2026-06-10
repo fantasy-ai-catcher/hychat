@@ -39,12 +39,22 @@ type MemberRow = {
   created_at?: string;
 };
 
+type InviteCodeRow = {
+  code: string;
+  room_name?: string | null;
+  used_by_display_name?: string | null;
+  used_at?: string | null;
+  expires_at: string;
+};
+
 type ChatServiceLike = {
   getCurrentUser: () => Promise<HychatUser | null>;
   startProfile: (displayName: string, inviteCode?: string) => Promise<HychatUser>;
   updateProfileColor: (color: string) => Promise<HychatUser>;
   signOut: () => Promise<void>;
-  createInviteCode: () => Promise<string>;
+  createInviteCode: (roomId?: string) => Promise<string>;
+  listInviteCodes?: () => Promise<InviteCodeRow[]>;
+  revokeInviteCode?: (code: string) => Promise<unknown>;
   listRooms: () => Promise<ServiceRoomSummary[]>;
   createRoom: (name: string, userId: string) => Promise<ServiceRoomSummary>;
   inviteMember: (roomId: string, displayName: string) => Promise<unknown>;
@@ -65,12 +75,19 @@ type RoomSubscription = {
   unsubscribe: () => unknown;
 };
 
+type StockQuoteChangeRow = {
+  canonical_symbol: string;
+  price?: number | null;
+  change_percent?: number | null;
+};
+
 type RealtimeLike = {
   subscribeToRoom: (
     roomId: string,
     handlers: {
       onMessage: (message: ChatMessageRow) => void;
       onWatchlistChange: () => void;
+      onQuoteChange?: (quote: StockQuoteChangeRow) => void;
       onStatus?: (status: string) => void;
     }
   ) => RoomSubscription;
@@ -88,6 +105,8 @@ export type CreateChatSessionOptions = {
   service: ChatServiceLike;
   realtime?: RealtimeLike;
   defaultDisplayName?: string;
+  autoStartDisplayName?: string;
+  autoStartInviteCode?: string;
   onSnapshotChange?: (snapshot: ChatSessionSnapshot) => void;
 };
 
@@ -100,8 +119,9 @@ const helpSections = [
         description: 'Activate this terminal user. The first active profile becomes admin.'
       },
       {
-        usage: '/logout',
-        description: 'Sign out and clear the local session.'
+        usage: '/logout confirm',
+        description:
+          'Sign out and clear the local session. Anonymous accounts cannot be recovered afterwards.'
       },
       {
         usage: '/quit',
@@ -135,7 +155,16 @@ const helpSections = [
       },
       {
         usage: '/invite-code',
-        description: 'Create a friend invite code. Admin only.'
+        description:
+          'Create an invite code. Inside a room the code also joins the friend to that room (room owner or admin); outside a room it is a global code (admin only).'
+      },
+      {
+        usage: '/invite-code list',
+        description: 'List the invite codes you created and whether they were used.'
+      },
+      {
+        usage: '/invite-code revoke <code>',
+        description: 'Revoke one of your unused invite codes.'
       },
       {
         usage: '/members',
@@ -269,6 +298,20 @@ export function createChatSession(options: CreateChatSessionOptions) {
       onWatchlistChange() {
         void loadRoomData(roomId).then(emitSnapshotChange);
       },
+      onQuoteChange(quote) {
+        apply({
+          type: 'quotes-updated',
+          quotes: [
+            {
+              symbol: quote.canonical_symbol,
+              price: quote.price ?? undefined,
+              changePercent: quote.change_percent ?? undefined,
+              cacheStatus: 'refreshed'
+            }
+          ]
+        });
+        emitSnapshotChange();
+      },
       onStatus(status) {
         apply({ type: 'connection-changed', status: status === 'SUBSCRIBED' ? 'connected' : 'connecting' });
         emitSnapshotChange();
@@ -309,6 +352,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
       }
 
       case 'logout':
+        if (!command.confirmed) {
+          statusText =
+            'Warning: this account is anonymous. After logout it cannot be recovered' +
+            ' and the nickname stays taken. Type /logout confirm to proceed.';
+          return;
+        }
+
         subscription?.unsubscribe();
         subscription = undefined;
         await options.service.signOut();
@@ -319,8 +369,41 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
       case 'invite-code': {
         requireUser();
-        const code = await options.service.createInviteCode();
-        statusText = `Invite code: ${code}`;
+        const roomId = state.activeRoomId;
+        const code = await options.service.createInviteCode(roomId);
+        const roomName = roomId
+          ? state.rooms.find((room) => room.id === roomId)?.name ?? roomId
+          : undefined;
+        statusText = roomName
+          ? `Invite code: ${code} (activates a profile and joins ${roomName})`
+          : `Invite code: ${code} (activates a profile; share it with one friend)`;
+        return;
+      }
+
+      case 'invite-code-list': {
+        requireUser();
+        if (!options.service.listInviteCodes) {
+          statusText = 'Listing invite codes is not supported by this service.';
+          return;
+        }
+
+        const codes = await options.service.listInviteCodes();
+        statusText =
+          codes.length > 0
+            ? codes.map(formatInviteCodeRow).join('\n')
+            : 'No invite codes yet. Create one with /invite-code.';
+        return;
+      }
+
+      case 'invite-code-revoke': {
+        requireUser();
+        if (!options.service.revokeInviteCode) {
+          statusText = 'Revoking invite codes is not supported by this service.';
+          return;
+        }
+
+        await options.service.revokeInviteCode(command.code);
+        statusText = `Invite code ${command.code} revoked.`;
         return;
       }
 
@@ -341,6 +424,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
       case 'join': {
         requireUser();
+        await loadRooms();
         const room = resolveRoom(command.room, state.rooms);
         await joinRoom(room.id);
         statusText = `Joined ${room.name}.`;
@@ -365,7 +449,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
         statusText =
           members.length > 0
             ? members
-                .map((member) => `${member.role}:${member.display_name ?? member.user_id}`)
+                .map(
+                  (member) =>
+                    `${member.role}:${member.display_name ?? member.user_id}(${member.display_color ?? 'white'})`
+                )
                 .join(' ')
             : 'Members can be invited with /invite <nickname>.';
         return;
@@ -459,10 +546,30 @@ export function createChatSession(options: CreateChatSessionOptions) {
   return {
     async initialize(): Promise<ChatSessionSnapshot> {
       user = await options.service.getCurrentUser();
+      let autoStarted = false;
+      if (!user && options.autoStartDisplayName) {
+        try {
+          user = await options.service.startProfile(
+            options.autoStartDisplayName,
+            options.autoStartInviteCode
+          );
+          autoStarted = true;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to start profile.';
+          statusText =
+            message === 'invite_code_required'
+              ? `Profile ${options.autoStartDisplayName} needs an invite code. Run /start ${options.autoStartDisplayName} <invite-code>.`
+              : translateServiceError(message);
+          return snapshot();
+        }
+      }
+
       if (user) {
         await loadRooms();
         apply({ type: 'connection-changed', status: 'connected' });
-        statusText = `Signed in as ${user.displayName}.`;
+        statusText = autoStarted
+          ? `Started as ${user.displayName} (${user.role}).`
+          : `Signed in as ${user.displayName}.`;
       }
 
       return snapshot();
@@ -500,7 +607,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
         await handleCommand(parsed);
       } catch (error) {
-        statusText = error instanceof Error ? error.message : 'Command failed.';
+        statusText = translateServiceError(
+          error instanceof Error ? error.message : 'Command failed.'
+        );
       }
 
       return snapshot();
@@ -562,6 +671,29 @@ function toQuoteSummary(quote: NonNullable<QuoteApiResult['quotes']>[number]): Q
   };
 }
 
+function formatInviteCodeRow(row: InviteCodeRow): string {
+  const scope = row.room_name ? `room:${row.room_name}` : 'global';
+  const usage = row.used_at
+    ? `used by ${row.used_by_display_name ?? 'unknown'}`
+    : 'unused';
+  const expires = row.expires_at.slice(0, 10);
+  return `${row.code} ${scope} ${usage} expires ${expires}`;
+}
+
+const serviceErrorMessages: Record<string, string> = {
+  display_name_taken: 'That nickname is already taken. Pick another with /start <nickname>.',
+  invite_code_required: 'An invite code is required: /start <nickname> <invite-code>.',
+  invalid_invite_code: 'That invite code is invalid, used, or expired.',
+  not_admin: 'Only the admin can create global invite codes. Inside a room you own, /invite-code creates a room invite.',
+  not_room_owner: 'Only the room owner can do that.',
+  invite_code_not_found: 'No unused invite code of yours matches that value.',
+  profile_not_found: 'No active profile with that nickname.'
+};
+
+function translateServiceError(message: string): string {
+  return serviceErrorMessages[message] ?? message;
+}
+
 function getSignedOutStatus(defaultDisplayName: string | undefined): string {
   return defaultDisplayName
     ? `Use /start to start as ${defaultDisplayName}, or /start <nickname> <invite-code>.`
@@ -577,7 +709,6 @@ function normalizeSymbol(input: string): string {
   return parsed.value.canonicalSymbol;
 }
 
-function resolveRoom(input: string, rooms: RoomSummary[]): RoomSummary;
 function resolveRoom(input: string, rooms: RoomSummary[]): RoomSummary {
   const normalized = input.toLowerCase();
   const match = rooms.find(

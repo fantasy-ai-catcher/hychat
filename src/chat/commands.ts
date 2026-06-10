@@ -9,6 +9,8 @@ export type ParsedChatInput =
   | JoinCommand
   | InviteCommand
   | InviteCodeCommand
+  | InviteCodeListCommand
+  | InviteCodeRevokeCommand
   | MembersCommand
   | WatchAddCommand
   | WatchRemoveCommand
@@ -26,12 +28,14 @@ type StartCommand = {
   displayName?: string;
   inviteCode?: string;
 };
-type LogoutCommand = { type: 'command'; name: 'logout' };
+type LogoutCommand = { type: 'command'; name: 'logout'; confirmed?: boolean };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
 type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
 type JoinCommand = { type: 'command'; name: 'join'; room: string };
 type InviteCommand = { type: 'command'; name: 'invite'; displayName: string };
 type InviteCodeCommand = { type: 'command'; name: 'invite-code' };
+type InviteCodeListCommand = { type: 'command'; name: 'invite-code-list' };
+type InviteCodeRevokeCommand = { type: 'command'; name: 'invite-code-revoke'; code: string };
 type MembersCommand = { type: 'command'; name: 'members' };
 type WatchAddCommand = { type: 'command'; name: 'watch-add'; symbol: string };
 type WatchRemoveCommand = { type: 'command'; name: 'watch-remove'; symbol: string };
@@ -60,7 +64,9 @@ export function parseChatInput(input: string): ParsedChatInput {
     case '/start':
       return parseStartCommand(args);
     case '/logout':
-      return { type: 'command', name: 'logout' };
+      return args[0] === 'confirm'
+        ? { type: 'command', name: 'logout', confirmed: true }
+        : { type: 'command', name: 'logout' };
     case '/rooms':
       return { type: 'command', name: 'rooms' };
     case '/members':
@@ -70,7 +76,7 @@ export function parseChatInput(input: string): ParsedChatInput {
     case '/quit':
       return { type: 'command', name: 'quit' };
     case '/invite-code':
-      return { type: 'command', name: 'invite-code' };
+      return parseInviteCodeCommand(args);
     case '/join':
       return requireArgument(args[0], 'Usage: /join <room>', (room) => ({
         type: 'command',
@@ -154,6 +160,24 @@ function parseWatchCommand(args: string[]): ParsedChatInput {
   }
 
   return { type: 'error', message: 'Usage: /watch <add|remove> <symbol>' };
+}
+
+function parseInviteCodeCommand(args: string[]): ParsedChatInput {
+  const [action, code, ...extra] = args;
+
+  if (!action) {
+    return { type: 'command', name: 'invite-code' };
+  }
+
+  if (action === 'list' && !code) {
+    return { type: 'command', name: 'invite-code-list' };
+  }
+
+  if (action === 'revoke' && code && extra.length === 0) {
+    return { type: 'command', name: 'invite-code-revoke', code };
+  }
+
+  return { type: 'error', message: 'Usage: /invite-code [list|revoke <code>]' };
 }
 
 function parseColorCommand(args: string[]): ParsedChatInput {

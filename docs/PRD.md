@@ -61,11 +61,21 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 3. 本地保存 Supabase session，避免每次启动都重新激活。
 4. 支持退出登录并清除本地 session。
 
+身份模型限制（明确为当前设计决策）：
+
+1. 匿名账号没有可重新登录的凭证，本地 session 文件就是唯一身份。
+2. 退出登录、删除 session 文件或换机器等同于永久丢失该账号，且昵称
+   仍被占用。因此 `/logout` 必须二次确认（`/logout confirm`），并在
+   确认前展示不可恢复警告。
+3. 后续如需找回能力，升级方向是把匿名用户绑定 email 或恢复口令
+   （Supabase 支持匿名用户转正式用户），本版本不做。
+
 验收标准：
 
 1. 未激活用户启动应用时看到 `/start` 引导。
 2. 激活成功后能看到自己可访问的房间列表。
-3. 退出登录后无法读取任何房间消息。
+3. `/logout` 不带确认时只显示警告，不退出；`/logout confirm` 退出后
+   无法读取任何房间消息。
 
 ### 6.2 房间列表和进入房间
 
@@ -78,11 +88,22 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 3. 支持房间内展示房间名、成员数、在线状态和股票 watchlist。
 4. 非成员不能看到房间，也不能订阅房间实时消息。
 
+邀请模型（合并系统邀请和房间邀请）：
+
+1. 邀请码分两种：全局码（仅 admin 可生成）和房间码（房间 owner 或
+   admin 在房间内生成）。
+2. 朋友使用房间码 `/start <nickname> <code>` 后，一步完成激活并加入
+   该房间，不需要再被单独 `/invite`。
+3. `/invite <nickname>` 保留，用于把已激活的 profile 拉进房间。
+4. 发码人可以用 `/invite-code list` 查看自己发出的码及使用状态，用
+   `/invite-code revoke <code>` 撤销未使用的码。
+
 验收标准：
 
 1. 用户 A 能看到自己加入的房间。
 2. 用户 B 未加入该房间时看不到该房间。
 3. 用户 B 直接尝试进入房间 ID 时被拒绝。
+4. 用户 B 用房间码激活后，不需要额外操作即可看到对应房间。
 
 ### 6.3 私密实时聊天
 
@@ -94,8 +115,11 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 2. 新消息持久化到数据库。
 3. 同房间其他在线成员实时收到消息。
 4. 新进入房间时加载最近消息历史。
-5. 支持消息时间、发送者昵称和正文展示。
+5. 支持消息时间、发送者昵称和正文展示。消息上的昵称和颜色是发送时
+   的快照（IRC 风格）：之后改名/改色不回写历史消息。
 6. 支持系统消息，例如成员加入、watchlist 变更、股票刷新失败。
+7. 服务端限制发送频率（每人每 10 秒最多 10 条），超出时返回
+   `rate_limited`，客户端展示可理解的错误。
 
 验收标准：
 
@@ -197,16 +221,20 @@ MVP 命令：
 
 ```text
 /start [nickname] [invite-code]
-/logout
+/logout (confirm)
+/create <room name>
 /rooms
 /join <room>
 /invite <nickname>
 /invite-code
+/invite-code list
+/invite-code revoke <code>
 /members
 /watch add <symbol>
 /watch remove <symbol>
 /stock <symbol>
 /refresh [symbol]
+/color (list | set <color>)
 /help
 /quit
 ```

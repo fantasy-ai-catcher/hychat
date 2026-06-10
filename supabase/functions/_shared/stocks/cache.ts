@@ -16,6 +16,12 @@ export type ResolveStockQuotesInput = {
   provider: EdgeStockProvider;
   now: Date;
   ttlSeconds: number;
+  // Provider quota guards: force refreshes are ignored while a fresh ok row
+  // was refreshed within forceMinIntervalSeconds, and after any attempt the
+  // provider is left alone for failureRetrySeconds (stale rows are served
+  // instead). Both default to values safe for free-tier quotas.
+  forceMinIntervalSeconds?: number;
+  failureRetrySeconds?: number;
 };
 
 export type ResolvedQuote = {
@@ -39,18 +45,41 @@ export async function resolveStockQuotes(
 
   const quotes: ResolvedQuote[] = [];
   const failed: Array<{ symbol: string; reason: string }> = [];
+  const forceMinIntervalMs = (input.forceMinIntervalSeconds ?? 30) * 1000;
+  const failureRetryMs = (input.failureRetrySeconds ?? 15) * 1000;
 
   for (const rawSymbol of input.symbols) {
     const symbol = parseEdgeCanonicalSymbol(rawSymbol);
     const cached = await input.cache.get(symbol.canonicalSymbol);
+    const msSinceAttempt = getMsSinceAttempt(cached, input.now);
+    const cacheIsFresh =
+      cached !== null &&
+      cached.status === 'ok' &&
+      new Date(cached.cacheExpiresAt).getTime() > input.now.getTime();
+
+    if (cached && cacheIsFresh && !input.force) {
+      quotes.push(toResolvedQuote(cached, 'hit'));
+      continue;
+    }
 
     if (
       cached &&
-      !input.force &&
-      cached.status === 'ok' &&
-      new Date(cached.cacheExpiresAt).getTime() > input.now.getTime()
+      cacheIsFresh &&
+      input.force &&
+      msSinceAttempt !== null &&
+      msSinceAttempt < forceMinIntervalMs
     ) {
       quotes.push(toResolvedQuote(cached, 'hit'));
+      continue;
+    }
+
+    if (
+      cached &&
+      !cacheIsFresh &&
+      msSinceAttempt !== null &&
+      msSinceAttempt < failureRetryMs
+    ) {
+      quotes.push(toResolvedQuote({ ...cached, status: 'stale' }, 'stale'));
       continue;
     }
 
@@ -59,6 +88,7 @@ export async function resolveStockQuotes(
       const sanitized = sanitizeQuote({
         ...fresh,
         cacheExpiresAt: getCacheExpiresAt(input.now, input.ttlSeconds),
+        lastRefreshAttemptAt: input.now.toISOString(),
         updatedAt: input.now.toISOString()
       });
       await input.cache.upsert(sanitized);
@@ -68,12 +98,26 @@ export async function resolveStockQuotes(
       failed.push({ symbol: symbol.canonicalSymbol, reason });
 
       if (cached) {
-        quotes.push(toResolvedQuote({ ...cached, status: 'stale' }, 'stale'));
+        const stale: CachedStockQuote = {
+          ...cached,
+          status: 'stale',
+          lastRefreshAttemptAt: input.now.toISOString()
+        };
+        await input.cache.upsert(stale);
+        quotes.push(toResolvedQuote(stale, 'stale'));
       }
     }
   }
 
   return { quotes, failed };
+}
+
+function getMsSinceAttempt(cached: CachedStockQuote | null, now: Date): number | null {
+  if (!cached?.lastRefreshAttemptAt) {
+    return null;
+  }
+
+  return now.getTime() - new Date(cached.lastRefreshAttemptAt).getTime();
 }
 
 function toResolvedQuote(

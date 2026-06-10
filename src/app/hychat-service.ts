@@ -30,6 +30,16 @@ export type WatchlistRow = {
   created_at: string;
 };
 
+export type InviteCodeRow = {
+  code: string;
+  room_id?: string | null;
+  room_name?: string | null;
+  used_by_display_name?: string | null;
+  used_at?: string | null;
+  expires_at: string;
+  created_at?: string;
+};
+
 export type RoomMemberRow = {
   room_id: string;
   user_id: string;
@@ -128,9 +138,21 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       ensureNoError(result.error);
     },
 
-    async createInviteCode(): Promise<string> {
-      const result = await supabase.rpc('create_invite_code', {});
+    async createInviteCode(roomId?: string): Promise<string> {
+      const result = await supabase.rpc('create_invite_code', {
+        target_room_id: roomId ?? null
+      });
       return ensureData<string>(result);
+    },
+
+    async listInviteCodes(): Promise<InviteCodeRow[]> {
+      const result = await supabase.rpc('list_invite_codes', {});
+      return ensureData<InviteCodeRow[]>(result);
+    },
+
+    async revokeInviteCode(code: string): Promise<void> {
+      const result = await supabase.rpc('revoke_invite_code', { target_code: code });
+      await ensureData(result);
     },
 
     async listRooms(): Promise<RoomSummary[]> {

@@ -48,11 +48,61 @@ describe('room realtime subscriptions', () => {
           table: 'room_watchlist',
           filter: 'room_id=eq.room-1'
         }
+      },
+      {
+        event: 'postgres_changes',
+        filter: {
+          event: '*',
+          schema: 'public',
+          table: 'stock_quotes'
+        }
       }
     ]);
     expect(subscribe).toHaveBeenCalledOnce();
 
     subscription.unsubscribe();
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it('forwards stock quote changes to the quote handler', () => {
+    const handlers: Array<{
+      filter: Record<string, unknown>;
+      handler: (payload: { new: Record<string, unknown>; old: unknown }) => void;
+    }> = [];
+    const channel = {
+      on(
+        _event: string,
+        filter: Record<string, unknown>,
+        handler: (payload: { new: Record<string, unknown>; old: unknown }) => void
+      ) {
+        handlers.push({ filter, handler });
+        return channel;
+      },
+      subscribe: vi.fn(),
+      unsubscribe: vi.fn()
+    };
+    const onQuoteChange = vi.fn();
+
+    subscribeToRoomRealtime(
+      { channel: vi.fn(() => channel) },
+      {
+        roomId: 'room-1',
+        onMessage: vi.fn(),
+        onWatchlistChange: vi.fn(),
+        onQuoteChange
+      }
+    );
+
+    const quoteEntry = handlers.find((entry) => entry.filter.table === 'stock_quotes');
+    quoteEntry?.handler({
+      new: { canonical_symbol: 'AAPL.US', price: 222.5, change_percent: 2.1 },
+      old: null
+    });
+
+    expect(onQuoteChange).toHaveBeenCalledWith({
+      canonical_symbol: 'AAPL.US',
+      price: 222.5,
+      change_percent: 2.1
+    });
   });
 });

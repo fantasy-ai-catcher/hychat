@@ -26,6 +26,7 @@ export type CachedStockQuote = {
   status: 'ok' | 'stale' | 'error';
   errorMessage?: string;
   cacheExpiresAt: string;
+  lastRefreshAttemptAt?: string;
   updatedAt: string;
 };
 

@@ -8,18 +8,58 @@ type RequestBody = {
   force?: boolean;
 };
 
+const MAX_SYMBOLS_PER_REQUEST = 50;
+
 Deno.serve(async (request) => {
   try {
     const body = (await request.json()) as RequestBody;
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
     const apiKey = Deno.env.get('TWELVE_DATA_API_KEY');
 
-    if (!supabaseUrl || !serviceRoleKey || !apiKey) {
+    if (!supabaseUrl || !serviceRoleKey || !anonKey || !apiKey) {
       return Response.json({ error: 'missing_server_configuration' }, { status: 500 });
     }
 
+    if (
+      !Array.isArray(body.symbols) ||
+      body.symbols.length === 0 ||
+      body.symbols.length > MAX_SYMBOLS_PER_REQUEST ||
+      body.symbols.some((symbol) => typeof symbol !== 'string' || symbol.trim() === '')
+    ) {
+      return Response.json({ error: 'invalid_symbols' }, { status: 400 });
+    }
+
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader) {
+      return Response.json({ error: 'missing_authorization' }, { status: 401 });
+    }
+
+    const callerClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    const { data: callerData, error: callerError } = await callerClient.auth.getUser();
+    if (callerError || !callerData.user) {
+      return Response.json({ error: 'invalid_token' }, { status: 401 });
+    }
+
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // Quote refreshes spend provider quota, so only activated profiles
+    // (nickname + invite onboarding completed) may trigger them.
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', callerData.user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (profileError) {
+      return Response.json({ error: 'profile_lookup_failed' }, { status: 500 });
+    }
+    if (!profile) {
+      return Response.json({ error: 'profile_not_active' }, { status: 403 });
+    }
     const cache: StockQuoteCacheStore = {
       async get(symbol) {
         const { data, error } = await supabase
@@ -53,6 +93,7 @@ Deno.serve(async (request) => {
           status: data.status,
           errorMessage: data.error_message,
           cacheExpiresAt: data.cache_expires_at,
+          lastRefreshAttemptAt: data.last_refresh_attempt_at,
           updatedAt: data.updated_at
         };
       },
@@ -74,7 +115,7 @@ Deno.serve(async (request) => {
           status: quote.status,
           error_message: quote.errorMessage,
           cache_expires_at: quote.cacheExpiresAt,
-          last_refresh_attempt_at: new Date().toISOString(),
+          last_refresh_attempt_at: quote.lastRefreshAttemptAt ?? new Date().toISOString(),
           updated_at: quote.updatedAt
         });
 
@@ -85,12 +126,16 @@ Deno.serve(async (request) => {
     };
 
     const result = await resolveStockQuotes({
-      symbols: body.symbols ?? [],
+      symbols: body.symbols,
       force: body.force ?? false,
       cache,
       provider: createTwelveDataProvider(apiKey),
       now: new Date(),
-      ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '60')
+      ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '60'),
+      forceMinIntervalSeconds: Number(
+        Deno.env.get('STOCK_QUOTE_FORCE_MIN_INTERVAL_SECONDS') ?? '30'
+      ),
+      failureRetrySeconds: Number(Deno.env.get('STOCK_QUOTE_FAILURE_RETRY_SECONDS') ?? '15')
     });
 
     return Response.json(result);

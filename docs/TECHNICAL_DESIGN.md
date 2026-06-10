@@ -155,13 +155,17 @@ Optional Supabase Cron -> Edge Function refresh-stock-quotes -> Postgres stock_q
 
 ### 5.1 profiles
 
-保存用户展示信息。
+保存用户展示信息。入口为昵称 + 邀请码，底层使用 Supabase Anonymous Auth。
 
 字段：
 
 ```text
 id uuid primary key references auth.users(id)
-display_name text not null
+email text unique  -- 历史遗留字段，匿名入口下恒为 null
+display_name text not null  -- 全局唯一（lower(display_name) unique index）
+display_color text not null default 'white'
+role text not null check (role in ('admin', 'member'))
+status text not null check (status in ('active', 'disabled'))
 created_at timestamptz not null default now()
 updated_at timestamptz not null default now()
 ```
@@ -169,7 +173,35 @@ updated_at timestamptz not null default now()
 访问规则：
 
 1. 用户可读取同房间成员的 profile。
-2. 用户只能更新自己的 `display_name`。
+2. 用户不能直接写 profiles 表，激活和改名走 `start_profile` RPC，改颜色走 `update_profile_color` RPC。
+3. 第一个激活的 profile 成为 admin，其余用户必须携带有效邀请码激活。
+
+### 5.1b invite_codes
+
+保存 admin 生成的一次性邀请码。
+
+字段：
+
+```text
+id uuid primary key default gen_random_uuid()
+code text not null unique
+created_by uuid not null references auth.users(id)
+used_by uuid references auth.users(id)
+used_at timestamptz
+expires_at timestamptz not null default now() + interval '30 days'
+room_id uuid references rooms(id) on delete cascade  -- 房间码；null 为全局码
+created_at timestamptz not null default now()
+```
+
+访问规则：
+
+1. 启用 RLS 且不创建 policy，客户端不能直接读写。
+2. 生成走 `create_invite_code(target_room_id default null)` RPC：全局码仅
+   admin；房间码允许房间 owner 或 admin。
+3. 消费在 `start_profile` RPC 内完成；房间码会同时把新用户插入
+   `room_members`，一步完成激活 + 进房。
+4. `list_invite_codes()` 列出自己发的码（admin 可见全部），
+   `revoke_invite_code(code)` 撤销未使用的码。
 
 ### 5.2 rooms
 
@@ -181,9 +213,15 @@ updated_at timestamptz not null default now()
 id uuid primary key default gen_random_uuid()
 name text not null
 owner_id uuid not null references auth.users(id)
+message_retention_days int not null default 30
+message_retention_min_count int not null default 5000
 created_at timestamptz not null default now()
 updated_at timestamptz not null default now()
 ```
+
+`message_retention_*` 供 `cleanup_old_messages` 使用：只删除同时满足
+“早于 retention_days”且“超出最近 min_count 条”的消息，即每个房间始终
+至少保留最近 min_count 条。
 
 访问规则：
 
@@ -220,8 +258,10 @@ primary key (room_id, user_id)
 id uuid primary key default gen_random_uuid()
 room_id uuid not null references rooms(id) on delete cascade
 sender_id uuid not null references auth.users(id)
+sender_display_name text not null  -- 插入时由 trigger 冗余写入
+sender_display_color text not null default 'white'  -- 同上
 kind text not null check (kind in ('text', 'system'))
-body text not null
+body text not null check (char_length(body) <= 2000)
 metadata jsonb not null default '{}'
 created_at timestamptz not null default now()
 ```
@@ -238,6 +278,13 @@ created_at timestamptz not null default now()
 1. 成员可读取所在房间消息。
 2. 成员可向所在房间插入自己的消息。
 3. 普通用户不可更新或删除消息。删除能力放到后续版本。
+4. 服务端 trigger 限制发送频率：每 sender 每 10 秒最多 10 条，超出
+   抛 `rate_limited`。
+
+语义说明：`sender_display_name` 和 `sender_display_color` 是发送时由
+trigger 写入的快照（IRC 风格）。用户之后改名或改色不会回写历史消息，
+这是有意决策：聊天记录保留当时的身份呈现，避免读路径 join 和实时
+payload 复杂化。`/members` 与新消息始终显示最新昵称/颜色。
 
 ### 5.5 room_watchlist
 
@@ -301,6 +348,16 @@ updated_at timestamptz not null default now()
 4. stale fallback：provider 失败但旧缓存存在时返回旧报价，并把响应状态标记为 `stale` 或 `error`。
 5. `provider_payload` 只保留排障必要字段，不保存完整 provider 原始响应。
 6. 对不再属于任何 room watchlist 且 `updated_at` 超过 7 天的缓存行，可以由 Cron 清理。
+
+配额防护（防止 provider 免费额度被打爆）：
+
+7. force 节流：`force = true` 但该 symbol 在
+   `STOCK_QUOTE_FORCE_MIN_INTERVAL_SECONDS`（默认 30s）内刚刷新过且
+   缓存可用时，忽略 force 直接返回缓存。
+8. 失败退避：每次 provider 调用（含失败）都更新
+   `last_refresh_attempt_at`；距上次尝试不足
+   `STOCK_QUOTE_FAILURE_RETRY_SECONDS`（默认 15s）时不再打 provider，
+   返回 stale 行。该窗口同时平滑了多成员同时进房间造成的并发踩踏。
 
 ## 6. RLS 和 Data API 权限
 
@@ -380,14 +437,20 @@ with check (
 
 ### 7.3 Watchlist 和 quote 更新
 
-1. `room_watchlist` insert/delete 后广播 watchlist 变化。
-2. `stock_quotes` 更新后广播 quote 变化。
-3. client 收到事件后局部刷新 sidebar。
+当前实现（方案 A，postgres_changes）：
+
+1. `room_watchlist` 和 `stock_quotes` 都加入 `supabase_realtime`
+   publication。
+2. 房间 channel 同时订阅 messages（按 room_id 过滤）、room_watchlist
+   （按 room_id 过滤）和 stock_quotes（无法按房间过滤，由 RLS 把行
+   限制在订阅者 watchlist 内）。
+3. watchlist 变化触发房间数据重载；quote 变化直接更新本地
+   `quotesBySymbol`。
 
 验收方法：
 
-1. A 添加 symbol 后，B 的 sidebar 自动出现该 symbol。
-2. 缓存刷新或可选 Cron 预刷新 quote 后，所有在线成员看到价格更新时间变化。
+1. A 添加 symbol 后，B 的股票面板自动出现该 symbol。
+2. A `/refresh` 后，B 不做任何操作也能看到新价格。
 
 ## 8. Stock Provider Adapter
 
@@ -572,7 +635,12 @@ TWELVE_DATA_API_KEY=<secret>
 
 1. 股票 provider API key 放在 Supabase function secrets。
 2. function 日志不得打印 API key 或完整 provider payload 中的敏感字段。
-3. 用户触发刷新时需要校验 JWT，并确认用户可访问相关 room。
+3. function 内部校验调用者 JWT，并要求 `profiles.status = 'active'`。
+   未完成昵称/邀请码激活的匿名用户不能触发 provider 查询。
+4. 不做 per-symbol 的 watchlist 归属校验：`/stock <symbol>` 允许查询
+   任意 symbol，已激活用户都是受信的小群体成员。报价本身不是私密数据，
+   这里防护的是 provider 配额滥用。
+5. 单次请求 symbol 数量上限 50，拒绝空列表和非法 symbol 类型。
 
 验收方法：
 
@@ -616,16 +684,27 @@ TWELVE_DATA_API_KEY=<secret>
 
 ```text
 +--------------------------------------------------------------+
-| HyChat / room-name                         online: 3          |
-+------------------------------------------+-------------------+
-| message list                              | members           |
-|                                          | stocks            |
-|                                          | AAPL  123.45 +1%  |
-|                                          | TSLA  234.56 -2%  |
-+------------------------------------------+-------------------+
-| input: hello world                                            |
+| HyChat / room-name                                            |
+| members: liudong (owner, rose)  alice (member, cyan)  +N more |
+| stocks:  AAPL.US 123.45 +1%   TSLA.US 234.56 -2%              |
++--------------------------------------------------------------+
+| message list                                                  |
+|                                                                |
++--------------------------------------------------------------+
+| input: hello world                                             |
+| status bar: session / connection / command feedback            |
 +--------------------------------------------------------------+
 ```
+
+实现说明：当前实现把成员和股票信息放在顶部 info panel 而不是右侧
+sidebar，窄 terminal 下更稳定。成员区有固定行数预算，超出部分显示
+`+N more`，完整列表通过 `/members` 查看。
+
+已知限制（Ink 全屏渲染的固有代价）：消息区只显示最近若干条，终端
+原生滚动缓冲区被接管，用户无法回滚查看更早消息。候选出路：
+(a) 自管滚动状态 + 翻页快捷键；(b) 改为追加打印 + 底部输入行的
+非全屏模式，牺牲布局换取原生 scrollback。两者都超出 MVP 范围，
+列入后续扩展。
 
 ### 11.2 状态管理
 
@@ -746,15 +825,16 @@ pnpm test
 11. 实现按需刷新，并把 Cron 作为可选缓存预刷新和孤儿缓存清理。
 12. 补齐测试和端到端验收脚本。
 
-当前实现状态：
+当前实现状态（2026-06-10）：
 
-1. 已完成 Node.js TypeScript 项目骨架。
-2. 已完成环境变量解析、命令解析、canonical symbol、quote cache policy。
-3. 已完成 Supabase initial migration、RLS policy 和清理函数。
-4. 已完成 Supabase repository helper 和 Realtime topic helper。
-5. 已完成 `get-stock-quotes` Edge Function 的核心 resolver、Twelve Data adapter 和当前报价缓存逻辑。
-6. 已完成 Ink terminal UI shell 和 reducer。
-7. 尚未完成真实登录交互、Supabase Realtime runtime wiring 和端到端 Supabase 环境验收。
+1. 已完成 Node.js TypeScript 项目骨架、环境变量解析、命令解析、canonical symbol、quote cache policy。
+2. 已完成 Supabase migration、RLS policy、清理函数、昵称 + 邀请码激活（Anonymous Auth + `start_profile` RPC）。
+3. 已完成 Supabase repository helper、`get-stock-quotes` Edge Function（含 JWT 与 active profile 校验、force 节流、失败退避）、Twelve Data adapter 和当前报价缓存。
+4. 已完成 Ink terminal UI（顶部 info panel 布局）、消息历史、Realtime postgres_changes 实时收发（消息、watchlist、quote，方案 A）、本地 session 持久化和 `--profile` 多账号。
+5. 已完成 profile 颜色（`/color` 系列命令、彩色成员列表和消息昵称）。
+6. 已完成房间码邀请（`create_invite_code(room_id)`、`/invite-code list|revoke`）、`/logout confirm` 二次确认、消息频率限制 trigger、孤儿匿名用户清理函数。
+7. 尚未实现：Presence 在线状态和 typing（§7.2）、`refresh-stock-quotes` Edge Function（§9.2）、Supabase Cron 调度（§10，清理函数已存在但无调度）、消息内 `$SYMBOL` 识别、`/stock` 详情视图（目前只展示价格和涨跌幅摘要）、消息区回滚/翻页（§11 已知限制）。
+8. Broadcast-first（方案 B）尚未启动，`realtime.ts` 中的 messages/presence topic helper 为该升级预留。
 
 ## 15. 后续扩展
 
