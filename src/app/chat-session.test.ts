@@ -197,6 +197,26 @@ describe('createChatSession', () => {
     expect(snapshot.statusText).toBe('owner:liudong member:alice');
   });
 
+  it('shows command usage, parameters, and descriptions in help', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    const snapshot = await session.handleLine('/help');
+
+    expect(snapshot.statusText).toContain('Start');
+    expect(snapshot.statusText).toContain('/start [nickname] [invite-code]');
+    expect(snapshot.statusText).toContain('Activate this terminal user');
+    expect(snapshot.statusText).toContain('/create <room name>');
+    expect(snapshot.statusText).toContain('Create a room');
+    expect(snapshot.statusText).toContain('/invite <nickname>');
+    expect(snapshot.statusText).toContain('Invite an active profile');
+    expect(snapshot.statusText).toContain('/watch add <symbol>');
+    expect(snapshot.statusText).toContain('Add a stock');
+    expect(snapshot.statusText).toContain('/refresh [symbol]');
+    expect(snapshot.statusText).toContain('Refresh watched stock quotes');
+    expect(snapshot.statusText).toContain('/quit');
+  });
+
   it('subscribes to realtime updates when a room is joined', async () => {
     const { service } = createService();
     const realtime = {

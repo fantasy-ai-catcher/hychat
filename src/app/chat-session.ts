@@ -80,21 +80,95 @@ export type CreateChatSessionOptions = {
   defaultDisplayName?: string;
 };
 
-const helpLines = [
-  '/start [nickname] [invite-code]',
-  '/create <room name>',
-  '/rooms',
-  '/join <room id|room name>',
-  '/invite <nickname>',
-  '/invite-code',
-  '/members',
-  '/watch add <symbol>',
-  '/watch remove <symbol>',
-  '/stock <symbol>',
-  '/refresh [symbol]',
-  '/logout',
-  '/quit'
+const helpSections = [
+  {
+    title: 'Start',
+    commands: [
+      {
+        usage: '/start [nickname] [invite-code]',
+        description: 'Activate this terminal user. The first active profile becomes admin.'
+      },
+      {
+        usage: '/logout',
+        description: 'Sign out and clear the local session.'
+      },
+      {
+        usage: '/quit',
+        description: 'Exit HyChat.'
+      }
+    ]
+  },
+  {
+    title: 'Rooms',
+    commands: [
+      {
+        usage: '/create <room name>',
+        description: 'Create a room and join it.'
+      },
+      {
+        usage: '/rooms',
+        description: 'Reload the rooms you can access.'
+      },
+      {
+        usage: '/join <room id|room name>',
+        description: 'Join an existing room by id or name.'
+      }
+    ]
+  },
+  {
+    title: 'Members',
+    commands: [
+      {
+        usage: '/invite <nickname>',
+        description: 'Invite an active profile into the current room.'
+      },
+      {
+        usage: '/invite-code',
+        description: 'Create a friend invite code. Admin only.'
+      },
+      {
+        usage: '/members',
+        description: 'List members in the current room.'
+      }
+    ]
+  },
+  {
+    title: 'Stocks',
+    commands: [
+      {
+        usage: '/watch add <symbol>',
+        description: 'Add a stock to the current room watchlist.'
+      },
+      {
+        usage: '/watch remove <symbol>',
+        description: 'Remove a stock from the current room watchlist.'
+      },
+      {
+        usage: '/stock <symbol>',
+        description: 'Load the latest quote for one stock.'
+      },
+      {
+        usage: '/refresh [symbol]',
+        description: 'Refresh watched stock quotes, or one symbol when provided.'
+      }
+    ]
+  },
+  {
+    title: 'Help',
+    commands: [
+      {
+        usage: '/help',
+        description: 'Show command usage, parameters, and descriptions.'
+      }
+    ]
+  }
 ];
+
+const helpText = formatHelpText(helpSections);
+
+const helpLines = helpSections.flatMap((section) =>
+  section.commands.map((command) => command.usage)
+);
 
 export function createChatSession(options: CreateChatSessionOptions) {
   let state = createInitialAppState();
@@ -314,7 +388,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
       }
 
       case 'help':
-        statusText = helpLines.join(' | ');
+        statusText = helpText;
         return;
 
       case 'quit':
@@ -370,6 +444,25 @@ export function createChatSession(options: CreateChatSessionOptions) {
       return snapshot();
     }
   };
+}
+
+type HelpSection = {
+  title: string;
+  commands: Array<{
+    usage: string;
+    description: string;
+  }>;
+};
+
+function formatHelpText(sections: HelpSection[]): string {
+  return sections
+    .map((section) => {
+      const commands = section.commands
+        .map((command) => `${command.usage}\n  ${command.description}`)
+        .join('\n');
+      return `${section.title}\n${commands}`;
+    })
+    .join('\n\n');
 }
 
 function toRoomSummary(room: ServiceRoomSummary): RoomSummary {
