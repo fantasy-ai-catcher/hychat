@@ -71,6 +71,15 @@ function createService() {
       },
       async sendTextMessage(input: unknown) {
         calls.push({ method: 'sendTextMessage', args: [input] });
+        return {
+          id: 'message-2',
+          room_id: room.id,
+          sender_id: user.id,
+          sender_display_name: user.displayName,
+          kind: 'text' as const,
+          body: (input as { body: string }).body,
+          created_at: '2026-06-06T08:02:00.000Z'
+        };
       },
       async listWatchlist(roomId: string) {
         calls.push({ method: 'listWatchlist', args: [roomId] });
@@ -184,6 +193,33 @@ describe('createChatSession', () => {
         }
       ])
     );
+  });
+
+  it('appends the sent message without reloading room data', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    await session.handleLine('/join Friends');
+    calls.length = 0;
+
+    const snapshot = await session.handleLine('fast local echo');
+
+    expect(snapshot.state.messagesByRoom['room-1']).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'message-2',
+          senderName: 'liudong',
+          body: 'fast local echo'
+        })
+      ])
+    );
+    expect(calls).toEqual([
+      {
+        method: 'sendTextMessage',
+        args: [{ roomId: 'room-1', senderId: 'user-1', body: 'fast local echo' }]
+      }
+    ]);
   });
 
   it('shows member nicknames in the members command', async () => {

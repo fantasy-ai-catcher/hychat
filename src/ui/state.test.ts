@@ -32,6 +32,29 @@ describe('UI state reducer', () => {
     expect(state.messagesByRoom['room-1']).toHaveLength(1);
   });
 
+  it('ignores duplicate received messages by id', () => {
+    const message = {
+      id: 'message-1',
+      roomId: 'room-1',
+      senderId: 'user-1',
+      senderName: 'liudong',
+      body: 'hello',
+      createdAt: '2026-06-06T08:00:00.000Z'
+    };
+    const state = reducer(
+      reducer(createInitialAppState(), {
+        type: 'message-received',
+        message
+      }),
+      {
+        type: 'message-received',
+        message
+      }
+    );
+
+    expect(state.messagesByRoom['room-1']).toEqual([message]);
+  });
+
   it('replaces messages when a room is reloaded', () => {
     const initial = reducer(createInitialAppState(), {
       type: 'message-received',

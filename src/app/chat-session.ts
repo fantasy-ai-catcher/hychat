@@ -44,7 +44,11 @@ type ChatServiceLike = {
   inviteMember: (roomId: string, displayName: string) => Promise<unknown>;
   listMembers?: (roomId: string) => Promise<MemberRow[]>;
   listRecentMessages: (roomId: string) => Promise<ChatMessageRow[]>;
-  sendTextMessage: (input: { roomId: string; senderId: string; body: string }) => Promise<void>;
+  sendTextMessage: (input: {
+    roomId: string;
+    senderId: string;
+    body: string;
+  }) => Promise<ChatMessageRow | void>;
   listWatchlist: (roomId: string) => Promise<WatchlistRow[]>;
   addWatchSymbol: (input: { roomId: string; symbol: string; addedBy: string }) => Promise<void>;
   removeWatchSymbol: (roomId: string, symbol: string) => Promise<void>;
@@ -433,12 +437,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
         if (parsed.type === 'message') {
           const currentUser = requireUser();
           const roomId = requireActiveRoom();
-          await options.service.sendTextMessage({
+          const sentMessage = await options.service.sendTextMessage({
             roomId,
             senderId: currentUser.id,
             body: parsed.body
           });
-          await loadRoomData(roomId);
+          if (sentMessage) {
+            apply({ type: 'message-received', message: toChatMessage(sentMessage) });
+          } else {
+            const messages = await options.service.listRecentMessages(roomId);
+            apply({ type: 'messages-loaded', roomId, messages: messages.map(toChatMessage) });
+          }
           statusText = 'Message sent.';
           return snapshot();
         }

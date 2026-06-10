@@ -11,6 +11,7 @@ function createMockSupabase() {
     role: 'admin',
     status: 'active'
   };
+  let lastTable = '';
 
   const query = {
     select(...args: unknown[]) {
@@ -47,6 +48,22 @@ function createMockSupabase() {
     },
     single() {
       calls.push({ method: 'single', args: [] });
+      if (lastTable === 'messages') {
+        return Promise.resolve({
+          data: {
+            id: 'message-1',
+            room_id: 'room-1',
+            sender_id: 'user-1',
+            sender_display_name: 'liudong',
+            kind: 'text',
+            body: 'hello',
+            metadata: {},
+            created_at: '2026-06-06T08:00:00.000Z'
+          },
+          error: null
+        });
+      }
+
       return Promise.resolve({ data: { id: 'room-1', name: 'Friends' }, error: null });
     },
     then(resolve: (value: unknown) => void) {
@@ -75,6 +92,7 @@ function createMockSupabase() {
         }
       },
       from(table: string) {
+        lastTable = table;
         calls.push({ method: 'from', args: [table] });
         return query;
       },
@@ -203,6 +221,52 @@ describe('createHychatService', () => {
         }
       ])
     );
+  });
+
+  it('returns the inserted chat message without requiring a follow-up message list query', async () => {
+    const { supabase, calls } = createMockSupabase();
+    const service = createHychatService(supabase);
+
+    await expect(
+      service.sendTextMessage({
+        roomId: 'room-1',
+        senderId: 'user-1',
+        body: 'hello'
+      })
+    ).resolves.toEqual({
+      id: 'message-1',
+      room_id: 'room-1',
+      sender_id: 'user-1',
+      sender_display_name: 'liudong',
+      kind: 'text',
+      body: 'hello',
+      metadata: {},
+      created_at: '2026-06-06T08:00:00.000Z'
+    });
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'from', args: ['messages'] },
+        {
+          method: 'insert',
+          args: [
+            {
+              room_id: 'room-1',
+              sender_id: 'user-1',
+              kind: 'text',
+              body: 'hello',
+              metadata: {}
+            }
+          ]
+        },
+        {
+          method: 'select',
+          args: ['id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at']
+        },
+        { method: 'single', args: [] }
+      ])
+    );
+    expect(calls).not.toContainEqual({ method: 'limit', args: [50] });
   });
 
   it('lists room members', async () => {

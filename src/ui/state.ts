@@ -82,6 +82,14 @@ export function reducer(state: AppState, action: AppAction): AppState {
         }
       };
     case 'message-received':
+      if (
+        (state.messagesByRoom[action.message.roomId] ?? []).some(
+          (message) => message.id === action.message.id
+        )
+      ) {
+        return state;
+      }
+
       return {
         ...state,
         messagesByRoom: {

@@ -174,16 +174,20 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       return [...messages].reverse();
     },
 
-    async sendTextMessage(input: SendTextMessageInput): Promise<void> {
-      await ensureData(
-        supabase.from('messages').insert({
+    async sendTextMessage(input: SendTextMessageInput): Promise<ChatMessageRow> {
+      const result = supabase
+        .from('messages')
+        .insert({
           room_id: input.roomId,
           sender_id: input.senderId,
           kind: 'text',
           body: input.body,
           metadata: {}
         })
-      );
+        .select('id,room_id,sender_id,sender_display_name,kind,body,metadata,created_at');
+      const selected = typeof result.single === 'function' ? result.single() : result;
+      const message = await ensureData<ChatMessageRow | ChatMessageRow[]>(selected);
+      return Array.isArray(message) ? message[0] : message;
     },
 
     async listWatchlist(roomId: string): Promise<WatchlistRow[]> {
