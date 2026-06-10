@@ -7,6 +7,14 @@ blanket TDD to the whole codebase; use the layered test strategy below.
 
 ### Working loop
 
+0. **Clarify before planning** when the request is subjective or open-ended —
+   e.g. "this UI/flow feels bad", a screenshot of a problem, "make X better".
+   Do NOT jump to a plan or start changing code. First observe the actual
+   behavior (read the screenshot carefully, or smoke-run the app), restate
+   the problem as you understand it, then propose 2-3 concrete directions
+   with trade-offs and let the user pick one. Only after the direction is
+   agreed, write the plan. Requests with a single clear interpretation skip
+   this step.
 1. For non-trivial work (new feature, behavior change across files), write a
    short plan in `docs/plans/` first, prefixed with the date
    (`YYYY-MM-DD-<topic>.md`). Trivial fixes can skip this.
