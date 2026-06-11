@@ -68,10 +68,12 @@ type ErrorLike = {
 
 type SupabaseLikeClient = {
   auth: {
-    signInAnonymously: () => Promise<{
-      data: { user: { id: string } | null };
-      error: ErrorLike | null;
-    }>;
+    signInWithOtp: (input: { email: string }) => Promise<{ error: ErrorLike | null }>;
+    verifyOtp: (
+      input:
+        | { email: string; token: string; type: 'email' }
+        | { token_hash: string; type: 'email' }
+    ) => Promise<{ error: ErrorLike | null }>;
     signOut: () => Promise<{ error: ErrorLike | null }>;
     getUser: () => Promise<{ data: { user: { id: string } | null }; error: ErrorLike | null }>;
   };
@@ -107,8 +109,22 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       return profile?.status === 'active' ? toHychatUser(profile) : null;
     },
 
+    async sendOtp(email: string): Promise<void> {
+      const result = await supabase.auth.signInWithOtp({ email });
+      ensureNoError(result.error);
+    },
+
+    async verifyOtp(email: string, code: string): Promise<void> {
+      const result = await supabase.auth.verifyOtp({ email, token: code, type: 'email' });
+      ensureNoError(result.error);
+    },
+
+    async verifyOtpLink(tokenHash: string): Promise<void> {
+      const result = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+      ensureNoError(result.error);
+    },
+
     async startProfile(displayName: string, inviteCode?: string): Promise<HychatUser> {
-      await ensureAnonymousUser(supabase);
       const result = await supabase.rpc('start_profile', {
         target_display_name: displayName,
         invite_code: inviteCode ?? null
@@ -264,25 +280,6 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       return ensureData(result);
     }
   };
-}
-
-async function ensureAnonymousUser(supabase: SupabaseLikeClient): Promise<{ id: string }> {
-  const current = await supabase.auth.getUser();
-  if (!isMissingAuthSessionError(current.error)) {
-    ensureNoError(current.error);
-  }
-
-  if (current.data.user) {
-    return current.data.user;
-  }
-
-  const result = await supabase.auth.signInAnonymously();
-  ensureNoError(result.error);
-  if (!result.data.user) {
-    throw new Error('Supabase did not return an authenticated user.');
-  }
-
-  return result.data.user;
 }
 
 async function getProfile(

@@ -16,9 +16,18 @@ function createService() {
   return {
     calls,
     service: {
-      async getCurrentUser() {
+      async getCurrentUser(): Promise<typeof user | null> {
         calls.push({ method: 'getCurrentUser', args: [] });
         return null;
+      },
+      async sendOtp(email: string) {
+        calls.push({ method: 'sendOtp', args: [email] });
+      },
+      async verifyOtp(email: string, code: string) {
+        calls.push({ method: 'verifyOtp', args: [email, code] });
+      },
+      async verifyOtpLink(tokenHash: string) {
+        calls.push({ method: 'verifyOtpLink', args: [tokenHash] });
       },
       async startProfile(displayName: string, inviteCode?: string) {
         calls.push({ method: 'startProfile', args: [displayName, inviteCode] });
@@ -146,91 +155,136 @@ function createService() {
   };
 }
 
-describe('createChatSession', () => {
-  it('starts an anonymous profile with the default nickname and loads rooms', async () => {
-    const { service, calls } = createService();
-    const session = createChatSession({ service, defaultDisplayName: 'liudong' });
+async function signIn(session: { handleLine: (line: string) => Promise<unknown> }) {
+  await session.handleLine('/start liudong ld@example.com invite123');
+  await session.handleLine('/verify 482913');
+}
 
-    const snapshot = await session.handleLine('/start');
+describe('createChatSession', () => {
+  it('sends an OTP on /start and registers a new profile on /verify', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    let snapshot = await session.handleLine('/start liudong ld@example.com invite123');
+
+    expect(snapshot.user).toBeNull();
+    expect(snapshot.statusText).toBe(
+      'Code sent to ld@example.com. Run /verify with the code or link from the email.'
+    );
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'sendOtp', args: ['ld@example.com'] }])
+    );
+
+    snapshot = await session.handleLine('/verify 482913');
 
     expect(snapshot.user?.id).toBe('user-1');
-    expect(snapshot.user?.displayName).toBe('liudong');
-    expect(snapshot.user?.displayColor).toBe('white');
-    expect(snapshot.state.rooms).toEqual([{ id: 'room-1', name: 'Friends' }]);
-    expect(calls).toEqual(
-      expect.arrayContaining([
-        { method: 'startProfile', args: ['liudong', undefined] },
-        { method: 'listRooms', args: [] }
-      ])
-    );
-  });
-
-  it('auto-starts a named local profile when no session exists', async () => {
-    const { service, calls } = createService();
-    const session = createChatSession({ service, autoStartDisplayName: 'test' });
-
-    const snapshot = await session.initialize();
-
-    expect(snapshot.user?.displayName).toBe('liudong');
     expect(snapshot.statusText).toBe('Started as liudong (admin).');
     expect(snapshot.state.rooms).toEqual([{ id: 'room-1', name: 'Friends' }]);
     expect(calls).toEqual(
       expect.arrayContaining([
-        { method: 'getCurrentUser', args: [] },
-        { method: 'startProfile', args: ['test', undefined] },
+        { method: 'verifyOtp', args: ['ld@example.com', '482913'] },
+        { method: 'startProfile', args: ['liudong', 'invite123'] },
         { method: 'listRooms', args: [] }
       ])
     );
   });
 
-  it('uses the invite code when auto-starting a named local profile', async () => {
+  it('welcomes back an existing profile after /verify', async () => {
     const { service, calls } = createService();
-    const session = createChatSession({
-      service,
-      autoStartDisplayName: 'test',
-      autoStartInviteCode: 'invite123'
-    });
+    let verified = false;
+    service.getCurrentUser = async () => {
+      calls.push({ method: 'getCurrentUser', args: [] });
+      return verified
+        ? {
+            id: 'user-1',
+            displayName: 'liudong',
+            displayColor: 'white',
+            role: 'admin' as const,
+            status: 'active' as const
+          }
+        : null;
+    };
+    service.verifyOtp = async (email: string, code: string) => {
+      calls.push({ method: 'verifyOtp', args: [email, code] });
+      verified = true;
+    };
+    const session = createChatSession({ service });
 
-    await session.initialize();
+    await session.handleLine('/start ld@example.com');
+    const snapshot = await session.handleLine('/verify 482913');
 
-    expect(calls).toEqual(
-      expect.arrayContaining([
-        { method: 'startProfile', args: ['test', 'invite123'] }
-      ])
-    );
+    expect(snapshot.user?.displayName).toBe('liudong');
+    expect(snapshot.statusText).toBe('Welcome back, liudong.');
+    expect(calls.filter((call) => call.method === 'startProfile')).toEqual([]);
   });
 
-  it('keeps running when auto-start requires an invite code', async () => {
-    const { service } = createService();
-    service.startProfile = async () => {
-      throw new Error('invite_code_required');
-    };
-    const session = createChatSession({ service, autoStartDisplayName: 'liudong' });
+  it('accepts a pasted login link in /verify', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
 
-    const snapshot = await session.initialize();
+    await session.handleLine('/start liudong ld@example.com');
+    await session.handleLine(
+      '/verify https://example.supabase.co/auth/v1/verify?token=pkce_abc123&type=magiclink&redirect_to=http://localhost:3000'
+    );
+
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'verifyOtpLink', args: ['pkce_abc123'] }])
+    );
+    expect(calls.some((call) => call.method === 'verifyOtp')).toBe(false);
+  });
+
+  it('rejects /verify before /start', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    const snapshot = await session.handleLine('/verify 482913');
+
+    expect(snapshot.statusText).toBe('Run /start <email> first to request a code.');
+  });
+
+  it('asks for a nickname when a verified email has no profile yet', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start ld@example.com');
+    let snapshot = await session.handleLine('/verify 482913');
 
     expect(snapshot.user).toBeNull();
     expect(snapshot.statusText).toBe(
-      'Profile liudong needs an invite code. Run /start liudong <invite-code>.'
+      'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.'
     );
-    expect(snapshot.shouldExit).toBe(false);
+
+    snapshot = await session.handleLine('/start liudong ld@example.com invite123');
+
+    expect(snapshot.user?.displayName).toBe('liudong');
+    expect(snapshot.statusText).toBe('Started as liudong (admin).');
+    expect(calls.filter((call) => call.method === 'sendOtp')).toHaveLength(1);
+  });
+
+  it('shows usage for a bare /start', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    const snapshot = await session.handleLine('/start');
+
+    expect(snapshot.statusText).toBe(
+      'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).'
+    );
   });
 
   it('starts with an invite code and can create an invite code as admin', async () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    let snapshot = await session.handleLine('/start alice invite123');
-    expect(snapshot.statusText).toBe('Started as liudong (admin).');
-
-    snapshot = await session.handleLine('/invite-code');
+    await signIn(session);
+    const snapshot = await session.handleLine('/invite-code');
 
     expect(snapshot.statusText).toBe(
       'Invite code: invite123 (activates a profile; share it with one friend)'
     );
     expect(calls).toEqual(
       expect.arrayContaining([
-        { method: 'startProfile', args: ['alice', 'invite123'] },
+        { method: 'startProfile', args: ['liudong', 'invite123'] },
         { method: 'createInviteCode', args: [undefined] }
       ])
     );
@@ -240,7 +294,7 @@ describe('createChatSession', () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     const snapshot = await session.handleLine('/rooms');
 
     expect(snapshot.statusText).toContain('Rooms (1):');
@@ -252,7 +306,7 @@ describe('createChatSession', () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/rooms');
     const snapshot = await session.handleLine('/join 1');
 
@@ -264,7 +318,7 @@ describe('createChatSession', () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     const snapshot = await session.handleLine('/join 5');
 
     expect(snapshot.statusText).toBe('Unknown room: 5');
@@ -274,7 +328,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/join Friends');
     const snapshot = await session.handleLine('/invite-code');
 
@@ -290,7 +344,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     let snapshot = await session.handleLine('/invite-code list');
 
     expect(snapshot.statusText).toContain('invite123');
@@ -310,14 +364,14 @@ describe('createChatSession', () => {
     );
   });
 
-  it('requires explicit confirmation before logout destroys the local account', async () => {
+  it('requires explicit confirmation before logout', async () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     let snapshot = await session.handleLine('/logout');
 
-    expect(snapshot.statusText).toContain('cannot be recovered');
+    expect(snapshot.statusText).toContain('log back in with /start <email>');
     expect(snapshot.statusText).toContain('/logout confirm');
     expect(snapshot.user?.id).toBe('user-1');
     expect(calls.some((call) => call.method === 'signOut')).toBe(false);
@@ -333,7 +387,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     let snapshot = await session.handleLine('/create Friends');
     expect(snapshot.state.activeRoomId).toBe('room-1');
     expect(snapshot.state.membersByRoom['room-1']).toEqual([
@@ -385,7 +439,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/join Friends');
     calls.length = 0;
 
@@ -412,7 +466,7 @@ describe('createChatSession', () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/join Friends');
     const snapshot = await session.handleLine('/members');
 
@@ -423,7 +477,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     let snapshot = await session.handleLine('/color');
     expect(snapshot.statusText).toContain('Current color: white');
     expect(snapshot.statusText).toContain('1:red');
@@ -444,8 +498,9 @@ describe('createChatSession', () => {
     const snapshot = await session.handleLine('/help');
 
     expect(snapshot.statusText).toContain('Start');
-    expect(snapshot.statusText).toContain('/start [nickname] [invite-code]');
-    expect(snapshot.statusText).toContain('Activate this terminal user');
+    expect(snapshot.statusText).toContain('/start <nickname> <email> [invite-code]');
+    expect(snapshot.statusText).toContain('/verify <code>');
+    expect(snapshot.statusText).toContain('Sends a code to your email');
     expect(snapshot.statusText).toContain('/create <room name>');
     expect(snapshot.statusText).toContain('Create a room');
     expect(snapshot.statusText).toContain('/invite <nickname>');
@@ -465,7 +520,7 @@ describe('createChatSession', () => {
     };
     const session = createChatSession({ service, realtime });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/join Friends');
 
     expect(realtime.subscribeToRoom).toHaveBeenCalledWith(
@@ -496,7 +551,7 @@ describe('createChatSession', () => {
     };
     const session = createChatSession({ service, realtime, onSnapshotChange });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/join Friends');
     onSnapshotChange.mockClear();
 
@@ -540,7 +595,7 @@ describe('createChatSession', () => {
     };
     const session = createChatSession({ service, realtime, onSnapshotChange });
 
-    await session.handleLine('/start liudong');
+    await signIn(session);
     await session.handleLine('/join Friends');
     onSnapshotChange.mockClear();
 

@@ -71,10 +71,11 @@ export function buildWelcomeLines(userDisplayName?: string): string[] {
   if (userDisplayName === undefined) {
     return [
       'Get started:',
-      '  1. /start <nickname> [invite-code]   create your profile',
-      '  2. /rooms                            list rooms',
-      '  3. /join <room>                      enter a room',
+      '  1. /start <nickname> <email> [invite-code]   register',
+      '  2. /verify <code or pasted link>             from the email you get',
+      '  3. /create <room name> or /join <room>       chat',
       '',
+      'Returning? /start <email> then /verify <code>.',
       'Type /help for all commands.'
     ];
   }

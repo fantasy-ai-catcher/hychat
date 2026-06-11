@@ -68,56 +68,6 @@ describe('CLI scaffold', () => {
     const options = vi.mocked(createHychatSupabaseClient).mock.calls.at(-1)?.[1];
     expect(options?.authStoragePath).toBe(getProfileSessionPath('test', homeDir));
     const appElement = vi.mocked(render).mock.calls.at(-1)?.[0];
-    expect(React.isValidElement<{ autoStartDisplayName?: string }>(appElement)).toBe(true);
-    if (React.isValidElement<{ autoStartDisplayName?: string }>(appElement)) {
-      expect(appElement.props.autoStartDisplayName).toBe('test');
-    }
-  });
-
-  it('passes invite code for auto-started local profiles', async () => {
-    const { render } = await import('ink');
-    const env = {
-      SUPABASE_URL: 'https://example.supabase.co',
-      SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test'
-    };
-
-    await runCli({
-      argv: ['node', 'hychat', '--profile', 'test', '--invite-code', 'invite123'],
-      env
-    });
-
-    const appElement = vi.mocked(render).mock.calls.at(-1)?.[0];
-    expect(React.isValidElement<{ autoStartInviteCode?: string }>(appElement)).toBe(true);
-    if (React.isValidElement<{ autoStartInviteCode?: string }>(appElement)) {
-      expect(appElement.props.autoStartInviteCode).toBe('invite123');
-    }
-  });
-
-  it('generates an invite code from the default session for new local profiles', async () => {
-    const { render } = await import('ink');
-    const { createHychatService } = await import('./app/hychat-service.js');
-    const homeDir = '/tmp/hychat-home';
-    const env = {
-      SUPABASE_URL: 'https://example.supabase.co',
-      SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test'
-    };
-
-    await runCli({
-      argv: ['node', 'hychat', '--profile', 'test'],
-      homeDir,
-      env
-    });
-
-    const services = vi.mocked(createHychatService).mock.results.map((result) => result.value);
-    const defaultService = services.find(
-      (service) => service.sourcePath === '/tmp/hychat-home/.hychat/session.json'
-    );
-    expect(defaultService?.createInviteCode).toHaveBeenCalled();
-
-    const appElement = vi.mocked(render).mock.calls.at(-1)?.[0];
-    expect(React.isValidElement<{ autoStartInviteCode?: string }>(appElement)).toBe(true);
-    if (React.isValidElement<{ autoStartInviteCode?: string }>(appElement)) {
-      expect(appElement.props.autoStartInviteCode).toBe('invite123');
-    }
+    expect(React.isValidElement(appElement)).toBe(true);
   });
 });

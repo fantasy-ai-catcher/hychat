@@ -53,10 +53,19 @@ today; OTP is only needed when there is no valid stored session.
      With all old profiles deactivated, the owner's first email registration
      becomes admin naturally. Admin lockout is structurally gone because an
      admin can always re-login via email.
-2. Dashboard (manual, one-time): disable the Anonymous sign-in provider;
-   keep Email provider with OTP. Note: built-in SMTP is rate-limited to a
-   few emails/hour — fine for a friends group; if it ever bites, plug a free
-   SMTP tier (still zero cost). Set OTP length 6 / default expiry.
+2. Auth config (done via management API): Anonymous provider disabled;
+   Email provider stays on.
+   **Free-tier constraint discovered during implementation:** email
+   templates cannot be customized while using the default email provider,
+   and the default "magic link" template contains only a link — no OTP
+   digits. Therefore `/verify` accepts either the digits (works once a
+   custom SMTP is configured later) or the entire pasted link, from which
+   it extracts the `token` parameter and verifies it as a token hash.
+   Verified end-to-end against the remote project with an
+   admin-generated link. Built-in SMTP is rate-limited to a few
+   emails/hour — fine for a friends group; if it ever bites, plug a free
+   SMTP tier (still zero cost) and the code path for digit codes lights up
+   with no code change.
 
 ### Service adapter (`src/app/hychat-service.ts`, Layer 3: thin, no new logic)
 

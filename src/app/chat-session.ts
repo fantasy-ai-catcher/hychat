@@ -49,6 +49,9 @@ type InviteCodeRow = {
 
 type ChatServiceLike = {
   getCurrentUser: () => Promise<HychatUser | null>;
+  sendOtp: (email: string) => Promise<void>;
+  verifyOtp: (email: string, code: string) => Promise<void>;
+  verifyOtpLink: (tokenHash: string) => Promise<void>;
   startProfile: (displayName: string, inviteCode?: string) => Promise<HychatUser>;
   updateProfileColor: (color: string) => Promise<HychatUser>;
   signOut: () => Promise<void>;
@@ -104,9 +107,6 @@ export type ChatSessionSnapshot = {
 export type CreateChatSessionOptions = {
   service: ChatServiceLike;
   realtime?: RealtimeLike;
-  defaultDisplayName?: string;
-  autoStartDisplayName?: string;
-  autoStartInviteCode?: string;
   onSnapshotChange?: (snapshot: ChatSessionSnapshot) => void;
 };
 
@@ -115,13 +115,17 @@ const helpSections = [
     title: 'Start',
     commands: [
       {
-        usage: '/start [nickname] [invite-code]',
-        description: 'Activate this terminal user. The first active profile becomes admin.'
+        usage: '/start <email> | /start <nickname> <email> [invite-code]',
+        description:
+          'Log in (email only) or register (nickname + email). Sends a code to your email.'
+      },
+      {
+        usage: '/verify <code>',
+        description: 'Enter the code from your email to finish /start.'
       },
       {
         usage: '/logout confirm',
-        description:
-          'Sign out and clear the local session. Anonymous accounts cannot be recovered afterwards.'
+        description: 'Sign out locally. Log back in any time with /start <email>.'
       },
       {
         usage: '/quit',
@@ -230,9 +234,11 @@ const helpLines = helpSections.flatMap((section) =>
 export function createChatSession(options: CreateChatSessionOptions) {
   let state = createInitialAppState();
   let user: HychatUser | null = null;
-  let statusText = getSignedOutStatus(options.defaultDisplayName);
+  let statusText = signedOutStatus;
   let shouldExit = false;
   let subscription: RoomSubscription | undefined;
+  let pendingAuth: { email: string; displayName?: string; inviteCode?: string } | null = null;
+  let verifiedEmail: string | null = null;
 
   function snapshot(): ChatSessionSnapshot {
     return { state, user, statusText, helpLines, shouldExit };
@@ -249,6 +255,12 @@ export function createChatSession(options: CreateChatSessionOptions) {
   async function loadRooms(): Promise<void> {
     const rooms = await options.service.listRooms();
     apply({ type: 'rooms-loaded', rooms: rooms.map(toRoomSummary) });
+  }
+
+  async function enterSignedInState(message: string): Promise<void> {
+    await loadRooms();
+    apply({ type: 'connection-changed', status: 'connected' });
+    statusText = message;
   }
 
   async function loadRoomData(roomId: string): Promise<void> {
@@ -338,24 +350,67 @@ export function createChatSession(options: CreateChatSessionOptions) {
   async function handleCommand(command: Exclude<ParsedChatInput, { type: 'message' | 'empty' | 'error' }>) {
     switch (command.name) {
       case 'start': {
-        const displayName = command.displayName ?? options.defaultDisplayName;
-        if (!displayName) {
-          statusText = 'Usage: /start <nickname> [invite-code]';
+        if (!command.email) {
+          statusText = startUsageStatus;
           return;
         }
 
-        user = await options.service.startProfile(displayName, command.inviteCode);
-        await loadRooms();
-        apply({ type: 'connection-changed', status: 'connected' });
-        statusText = `Started as ${user.displayName} (${user.role}).`;
+        if (command.email === verifiedEmail && command.displayName) {
+          user = await options.service.startProfile(command.displayName, command.inviteCode);
+          await enterSignedInState(`Started as ${user.displayName} (${user.role}).`);
+          return;
+        }
+
+        await options.service.sendOtp(command.email);
+        pendingAuth = {
+          email: command.email,
+          displayName: command.displayName,
+          inviteCode: command.inviteCode
+        };
+        statusText = `Code sent to ${command.email}. Run /verify with the code or link from the email.`;
+        return;
+      }
+
+      case 'verify': {
+        if (!pendingAuth) {
+          statusText = 'Run /start <email> first to request a code.';
+          return;
+        }
+
+        const tokenHash = extractLoginLinkToken(command.code);
+        if (tokenHash) {
+          await options.service.verifyOtpLink(tokenHash);
+        } else {
+          await options.service.verifyOtp(pendingAuth.email, command.code);
+        }
+        verifiedEmail = pendingAuth.email;
+
+        user = await options.service.getCurrentUser();
+        if (user) {
+          pendingAuth = null;
+          await enterSignedInState(`Welcome back, ${user.displayName}.`);
+          return;
+        }
+
+        if (!pendingAuth.displayName) {
+          statusText =
+            'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.';
+          return;
+        }
+
+        user = await options.service.startProfile(
+          pendingAuth.displayName,
+          pendingAuth.inviteCode
+        );
+        pendingAuth = null;
+        await enterSignedInState(`Started as ${user.displayName} (${user.role}).`);
         return;
       }
 
       case 'logout':
         if (!command.confirmed) {
           statusText =
-            'Warning: this account is anonymous. After logout it cannot be recovered' +
-            ' and the nickname stays taken. Type /logout confirm to proceed.';
+            'Sign out locally? You can log back in with /start <email>. Type /logout confirm to proceed.';
           return;
         }
 
@@ -363,6 +418,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
         subscription = undefined;
         await options.service.signOut();
         user = null;
+        verifiedEmail = null;
         state = createInitialAppState();
         statusText = 'Signed out.';
         return;
@@ -546,30 +602,8 @@ export function createChatSession(options: CreateChatSessionOptions) {
   return {
     async initialize(): Promise<ChatSessionSnapshot> {
       user = await options.service.getCurrentUser();
-      let autoStarted = false;
-      if (!user && options.autoStartDisplayName) {
-        try {
-          user = await options.service.startProfile(
-            options.autoStartDisplayName,
-            options.autoStartInviteCode
-          );
-          autoStarted = true;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to start profile.';
-          statusText =
-            message === 'invite_code_required'
-              ? `Profile ${options.autoStartDisplayName} needs an invite code. Run /start ${options.autoStartDisplayName} <invite-code>.`
-              : translateServiceError(message);
-          return snapshot();
-        }
-      }
-
       if (user) {
-        await loadRooms();
-        apply({ type: 'connection-changed', status: 'connected' });
-        statusText = autoStarted
-          ? `Started as ${user.displayName} (${user.role}).`
-          : `Signed in as ${user.displayName}.`;
+        await enterSignedInState(`Signed in as ${user.displayName}.`);
       }
 
       return snapshot();
@@ -694,11 +728,24 @@ function translateServiceError(message: string): string {
   return serviceErrorMessages[message] ?? message;
 }
 
-function getSignedOutStatus(defaultDisplayName: string | undefined): string {
-  return defaultDisplayName
-    ? `Use /start to start as ${defaultDisplayName}, or /start <nickname> <invite-code>.`
-    : 'Use /start <nickname> [invite-code] to start.';
+// The free-tier login email contains a link instead of a code; users can
+// paste the whole link into /verify and we pull the token out of it.
+function extractLoginLinkToken(input: string): string | null {
+  if (!input.includes('://')) {
+    return null;
+  }
+
+  try {
+    return new URL(input).searchParams.get('token');
+  } catch {
+    return null;
+  }
 }
+
+const startUsageStatus =
+  'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).';
+const signedOutStatus =
+  'Use /start <email> to log in, or /start <nickname> <email> [invite-code] to register.';
 
 function normalizeSymbol(input: string): string {
   const parsed = parseCanonicalSymbol(input);

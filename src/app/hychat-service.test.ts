@@ -77,9 +77,17 @@ function createMockSupabase() {
     calls,
     supabase: {
       auth: {
-        async signInAnonymously(args?: unknown) {
-          calls.push({ method: 'signInAnonymously', args: args ? [args] : [] });
-          return { data: { user }, error: null };
+        async signInWithOtp(input: { email: string }) {
+          calls.push({ method: 'signInWithOtp', args: [input] });
+          return { error: null };
+        },
+        async verifyOtp(
+          input:
+            | { email: string; token: string; type: 'email' }
+            | { token_hash: string; type: 'email' }
+        ) {
+          calls.push({ method: 'verifyOtp', args: [input] });
+          return { error: null };
         },
         async signOut() {
           calls.push({ method: 'signOut', args: [] });
@@ -168,12 +176,31 @@ describe('createHychatService', () => {
     await expect(service.getCurrentUser()).resolves.toBeNull();
   });
 
-  it('starts an anonymous profile through the invite-aware RPC', async () => {
+  it('sends and verifies an email OTP through supabase auth', async () => {
     const { supabase, calls } = createMockSupabase();
-    supabase.auth.getUser = async () => ({
-      data: { user: null },
-      error: { message: 'Auth session missing!' }
-    });
+    const service = createHychatService(supabase);
+
+    await service.sendOtp('ld@example.com');
+    await service.verifyOtp('ld@example.com', '482913');
+    await service.verifyOtpLink('pkce_abc123');
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'signInWithOtp', args: [{ email: 'ld@example.com' }] },
+        {
+          method: 'verifyOtp',
+          args: [{ email: 'ld@example.com', token: '482913', type: 'email' }]
+        },
+        {
+          method: 'verifyOtp',
+          args: [{ token_hash: 'pkce_abc123', type: 'email' }]
+        }
+      ])
+    );
+  });
+
+  it('starts a profile through the invite-aware RPC', async () => {
+    const { supabase, calls } = createMockSupabase();
     const service = createHychatService(supabase);
 
     await expect(service.startProfile('liudong', 'invite123')).resolves.toEqual({
@@ -186,7 +213,6 @@ describe('createHychatService', () => {
 
     expect(calls).toEqual(
       expect.arrayContaining([
-        { method: 'signInAnonymously', args: [] },
         {
           method: 'rpc',
           args: [
@@ -196,6 +222,7 @@ describe('createHychatService', () => {
         }
       ])
     );
+    expect(calls.some((call) => call.method === 'signInWithOtp')).toBe(false);
   });
 
   it('updates the current profile color through RPC', async () => {
