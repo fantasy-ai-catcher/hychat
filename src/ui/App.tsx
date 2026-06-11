@@ -7,6 +7,12 @@ import {
   type CreateChatSessionOptions
 } from '../app/chat-session.js';
 import { resolveProfileColor } from '../app/profile-colors.js';
+import {
+  buildShimmerSegments,
+  formatBusyElapsed,
+  loadingColor,
+  spinnerFrame
+} from './loading-animation.js';
 import type { AppState } from './state.js';
 import { buildWelcomeLines, createInitialAppState, resolveShellView } from './state.js';
 
@@ -22,6 +28,7 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
     user: null,
     statusText:
       'Use /start <email> to log in, or /start <nickname> <email> [invite-code] to register.',
+    isBusy: false,
     helpLines: [],
     shouldExit: false
   };
@@ -79,6 +86,26 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
     };
   }, []);
 
+  const [busyTick, setBusyTick] = useState(0);
+  const [busyStartedAt, setBusyStartedAt] = useState<number | undefined>();
+
+  useEffect(() => {
+    if (!snapshot.isBusy) {
+      setBusyStartedAt(undefined);
+      return;
+    }
+
+    setBusyTick(0);
+    setBusyStartedAt(Date.now());
+    const timer = setInterval(() => {
+      setBusyTick((current) => current + 1);
+    }, 80);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [snapshot.isBusy]);
+
   async function submitLine(line: string): Promise<void> {
     if (!session) {
       return;
@@ -124,6 +151,11 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
     <AppShell
       state={activeState}
       statusText={snapshot.statusText}
+      busy={snapshot.isBusy}
+      busyTick={busyTick}
+      busyElapsed={
+        busyStartedAt === undefined ? undefined : formatBusyElapsed(busyStartedAt, Date.now())
+      }
       userLabel={snapshot.user?.displayName}
       userRole={snapshot.user?.role}
       promptLabel=">"
@@ -137,6 +169,9 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
 type AppShellProps = {
   state: AppState;
   statusText: string;
+  busy?: boolean;
+  busyTick?: number;
+  busyElapsed?: string;
   userLabel?: string;
   userRole?: string;
   promptLabel: string;
@@ -148,6 +183,9 @@ type AppShellProps = {
 export function AppShell({
   state,
   statusText,
+  busy,
+  busyTick,
+  busyElapsed,
   userLabel,
   userRole,
   promptLabel,
@@ -171,7 +209,7 @@ export function AppShell({
       <Box flexDirection="column" height={shellHeight}>
         {WelcomeScreen({ userLabel, height: welcomeHeight })}
         <Box flexDirection="column" flexShrink={0}>
-          <StatusText text={statusText} />
+          <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
           <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
         </Box>
       </Box>
@@ -183,7 +221,7 @@ export function AppShell({
       {TopInfoPanel({ state, userLabel, userRole, height: topHeight })}
       {MessageViewport({ messages: messages.slice(-chatHeight), height: chatHeight })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
-        <StatusText text={statusText} />
+        <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
         <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
         <StatusBar state={state} userLabel={userLabel} userRole={userRole} />
       </Box>
@@ -310,7 +348,31 @@ export function MessageViewport({ messages, height }: MessageViewportProps) {
   );
 }
 
-export function StatusText({ text }: { text: string }) {
+export type StatusTextProps = {
+  text: string;
+  busy?: boolean;
+  busyTick?: number;
+  busyElapsed?: string;
+};
+
+export function StatusText({ text, busy, busyTick, busyElapsed }: StatusTextProps) {
+  if (busy) {
+    const tick = busyTick ?? 0;
+    return (
+      <Box height={1} overflow="hidden" flexShrink={0}>
+        <Text>
+          <Text color={loadingColor}>{spinnerFrame(tick)} </Text>
+          {buildShimmerSegments(text.split('\n')[0], tick).map((segment, index) => (
+            <Text key={`${index}:${segment.text}`} color={loadingColor} dimColor={!segment.bright}>
+              {segment.text}
+            </Text>
+          ))}
+          {busyElapsed ? <Text dimColor> {busyElapsed}</Text> : null}
+        </Text>
+      </Box>
+    );
+  }
+
   const lines = text.split('\n').slice(0, getStatusHeight(text));
   return (
     <Box flexDirection="column" height={lines.length} overflow="hidden" flexShrink={0}>

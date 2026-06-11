@@ -102,6 +102,7 @@ export type ChatSessionSnapshot = {
   state: AppState;
   user: HychatUser | null;
   statusText: string;
+  isBusy: boolean;
   helpLines: string[];
   shouldExit: boolean;
 };
@@ -229,6 +230,58 @@ const helpSections = [
 
 const helpText = formatHelpText(helpSections);
 
+// Shown in the status line while a command's network request is in flight.
+// Returns null for input that resolves instantly, so the status does not flash.
+export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
+  if (parsed.type === 'message') {
+    return 'Sending…';
+  }
+
+  if (parsed.type !== 'command') {
+    return null;
+  }
+
+  switch (parsed.name) {
+    case 'start':
+      return parsed.email ? 'Signing in…' : null;
+    case 'verify':
+      return 'Verifying…';
+    case 'logout':
+      return parsed.confirmed ? 'Signing out…' : null;
+    case 'rooms':
+      return 'Loading rooms…';
+    case 'create-room':
+      return `Creating room ${parsed.nameText}…`;
+    case 'join':
+      return `Joining ${parsed.room}…`;
+    case 'invite':
+      return `Inviting ${parsed.displayName}…`;
+    case 'invite-code':
+      return 'Creating invite code…';
+    case 'invite-code-list':
+      return 'Loading invite codes…';
+    case 'invite-code-revoke':
+      return 'Revoking invite code…';
+    case 'members':
+      return 'Loading members…';
+    case 'watch-add':
+      return `Adding ${parsed.symbol}…`;
+    case 'watch-remove':
+      return `Removing ${parsed.symbol}…`;
+    case 'stock':
+      return `Loading ${parsed.symbol}…`;
+    case 'refresh':
+      return 'Refreshing quotes…';
+    case 'color-set':
+      return 'Saving color…';
+    case 'color-show':
+    case 'color-list':
+    case 'help':
+    case 'quit':
+      return null;
+  }
+}
+
 const helpLines = helpSections.flatMap((section) =>
   section.commands.map((command) => command.usage)
 );
@@ -237,13 +290,14 @@ export function createChatSession(options: CreateChatSessionOptions) {
   let state = createInitialAppState();
   let user: HychatUser | null = null;
   let statusText = signedOutStatus;
+  let isBusy = false;
   let shouldExit = false;
   let subscription: RoomSubscription | undefined;
   let pendingAuth: { email: string; displayName?: string; inviteCode?: string } | null = null;
   let verifiedEmail: string | null = null;
 
   function snapshot(): ChatSessionSnapshot {
-    return { state, user, statusText, helpLines, shouldExit };
+    return { state, user, statusText, isBusy, helpLines, shouldExit };
   }
 
   function emitSnapshotChange(): void {
@@ -623,6 +677,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
     async handleLine(line: string): Promise<ChatSessionSnapshot> {
       const parsed = parseChatInput(line);
+      const pendingStatusText = buildPendingStatusText(parsed);
+      if (pendingStatusText) {
+        statusText = pendingStatusText;
+        isBusy = true;
+        emitSnapshotChange();
+      }
+
       try {
         if (parsed.type === 'empty') {
           return snapshot();
@@ -648,14 +709,15 @@ export function createChatSession(options: CreateChatSessionOptions) {
             apply({ type: 'messages-loaded', roomId, messages: messages.map(toChatMessage) });
           }
           statusText = 'Message sent.';
-          return snapshot();
+        } else {
+          await handleCommand(parsed);
         }
-
-        await handleCommand(parsed);
       } catch (error) {
         statusText = translateServiceError(
           error instanceof Error ? error.message : 'Command failed.'
         );
+      } finally {
+        isBusy = false;
       }
 
       return snapshot();

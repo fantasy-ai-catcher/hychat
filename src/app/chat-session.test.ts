@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createChatSession } from './chat-session.js';
+import { parseChatInput } from '../chat/commands.js';
+import { buildPendingStatusText, createChatSession } from './chat-session.js';
 
 function createService() {
   const calls: Array<{ method: string; args: unknown[] }> = [];
@@ -695,5 +696,80 @@ describe('createChatSession', () => {
         })
       })
     );
+  });
+
+  it('emits a pending status snapshot before a slow command resolves', async () => {
+    const { service } = createService();
+    let resolveSendOtp: (() => void) | undefined;
+    service.sendOtp = () =>
+      new Promise<void>((resolve) => {
+        resolveSendOtp = resolve;
+      });
+    const onSnapshotChange = vi.fn();
+    const session = createChatSession({ service, onSnapshotChange });
+
+    const result = session.handleLine('/start ld@example.com');
+    await Promise.resolve();
+
+    expect(onSnapshotChange).toHaveBeenCalledWith(
+      expect.objectContaining({ statusText: 'Signing in…', isBusy: true })
+    );
+
+    resolveSendOtp?.();
+    const snapshot = await result;
+    expect(snapshot.statusText).toBe(
+      'Code sent to ld@example.com. Run /verify with the code or link from the email.'
+    );
+    expect(snapshot.isBusy).toBe(false);
+  });
+
+  it('does not emit a pending status for local commands', async () => {
+    const { service } = createService();
+    const onSnapshotChange = vi.fn();
+    const session = createChatSession({ service, onSnapshotChange });
+
+    await session.handleLine('/help');
+    await session.handleLine('');
+    await session.handleLine('/nope');
+
+    expect(onSnapshotChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildPendingStatusText', () => {
+  it.each([
+    ['hello there', 'Sending…'],
+    ['/start ld@example.com', 'Signing in…'],
+    ['/start liudong ld@example.com invite123', 'Signing in…'],
+    ['/verify 482913', 'Verifying…'],
+    ['/logout confirm', 'Signing out…'],
+    ['/rooms', 'Loading rooms…'],
+    ['/create My Room', 'Creating room My Room…'],
+    ['/join Friends', 'Joining Friends…'],
+    ['/invite alice', 'Inviting alice…'],
+    ['/invite-code', 'Creating invite code…'],
+    ['/invite-code list', 'Loading invite codes…'],
+    ['/invite-code revoke invite123', 'Revoking invite code…'],
+    ['/members', 'Loading members…'],
+    ['/watch add AAPL.US', 'Adding AAPL.US…'],
+    ['/watch remove AAPL.US', 'Removing AAPL.US…'],
+    ['/stock AAPL.US', 'Loading AAPL.US…'],
+    ['/refresh', 'Refreshing quotes…'],
+    ['/color set rose', 'Saving color…']
+  ])('maps %s to a pending status', (input, expected) => {
+    expect(buildPendingStatusText(parseChatInput(input))).toBe(expected);
+  });
+
+  it.each([
+    [''],
+    ['/help'],
+    ['/quit'],
+    ['/logout'],
+    ['/start'],
+    ['/color'],
+    ['/color list'],
+    ['/nope']
+  ])('returns null for instant input %s', (input) => {
+    expect(buildPendingStatusText(parseChatInput(input))).toBeNull();
   });
 });
