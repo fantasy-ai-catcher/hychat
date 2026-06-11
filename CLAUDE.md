@@ -1,5 +1,23 @@
 # Agent Instructions
 
+## Product intent
+
+HyChat is a terminal chat tool for a small circle of friends. It is a hobby
+project: no monetization now or planned, no untrusted users, no scale beyond
+a handful of people who know each other.
+
+Let this drive every technical and product decision:
+
+- **Prefer the simplest design that works for a few trusted friends.** Do not
+  build for scale, multi-tenancy, abuse resistance, or enterprise concerns.
+- **Zero recurring cost.** Stay on free tiers (Supabase free plan, free stock
+  APIs). Reject choices that require paid services, even cheap ones.
+- **Fewer moving parts beats feature completeness.** A manual step that runs
+  once a month is better than automation that adds a service to maintain.
+- **Friction is acceptable when it buys robustness.** Users are a few patient
+  friends, not customers; a one-time extra step in onboarding is fine if it
+  removes a whole failure mode.
+
 ## Development methodology
 
 Every change follows the loop: **plan → implement → verify**. Do NOT apply
