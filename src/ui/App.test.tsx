@@ -57,6 +57,10 @@ describe('App', () => {
       async sendOtp() {},
       async verifyOtp() {},
       async verifyOtpLink() {},
+      async setSessionTokens() {},
+      async getAuthEmail() {
+        return null;
+      },
       async startProfile() {
         return {
           id: 'user-1',

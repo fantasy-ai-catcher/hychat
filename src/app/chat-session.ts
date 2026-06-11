@@ -52,6 +52,8 @@ type ChatServiceLike = {
   sendOtp: (email: string) => Promise<void>;
   verifyOtp: (email: string, code: string) => Promise<void>;
   verifyOtpLink: (tokenHash: string) => Promise<void>;
+  setSessionTokens: (accessToken: string, refreshToken: string) => Promise<void>;
+  getAuthEmail: () => Promise<string | null>;
   startProfile: (displayName: string, inviteCode?: string) => Promise<HychatUser>;
   updateProfileColor: (color: string) => Promise<HychatUser>;
   signOut: () => Promise<void>;
@@ -355,10 +357,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
           return;
         }
 
-        if (command.email === verifiedEmail && command.displayName) {
-          user = await options.service.startProfile(command.displayName, command.inviteCode);
-          await enterSignedInState(`Started as ${user.displayName} (${user.role}).`);
-          return;
+        if (command.displayName) {
+          const authedEmail = verifiedEmail ?? (await options.service.getAuthEmail());
+          if (authedEmail === command.email) {
+            user = await options.service.startProfile(command.displayName, command.inviteCode);
+            await enterSignedInState(`Started as ${user.displayName} (${user.role}).`);
+            return;
+          }
         }
 
         await options.service.sendOtp(command.email);
@@ -372,18 +377,25 @@ export function createChatSession(options: CreateChatSessionOptions) {
       }
 
       case 'verify': {
-        if (!pendingAuth) {
-          statusText = 'Run /start <email> first to request a code.';
-          return;
-        }
+        const redirectSession = extractRedirectSession(command.code);
+        const tokenHash = redirectSession ? null : extractLoginLinkToken(command.code);
 
-        const tokenHash = extractLoginLinkToken(command.code);
-        if (tokenHash) {
+        if (redirectSession) {
+          await options.service.setSessionTokens(
+            redirectSession.accessToken,
+            redirectSession.refreshToken
+          );
+        } else if (tokenHash) {
           await options.service.verifyOtpLink(tokenHash);
         } else {
+          if (!pendingAuth) {
+            statusText = 'Run /start <email> first to request a code.';
+            return;
+          }
           await options.service.verifyOtp(pendingAuth.email, command.code);
         }
-        verifiedEmail = pendingAuth.email;
+
+        verifiedEmail = pendingAuth?.email ?? (await options.service.getAuthEmail());
 
         user = await options.service.getCurrentUser();
         if (user) {
@@ -392,7 +404,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
           return;
         }
 
-        if (!pendingAuth.displayName) {
+        if (!pendingAuth?.displayName) {
           statusText =
             'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.';
           return;
@@ -737,6 +749,26 @@ function extractLoginLinkToken(input: string): string | null {
 
   try {
     return new URL(input).searchParams.get('token');
+  } catch {
+    return null;
+  }
+}
+
+// Clicking the email link consumes the token and redirects the browser to
+// site_url with a ready session in the URL fragment. Accept that pasted
+// redirect URL too, so a clicked link still logs the user in.
+function extractRedirectSession(
+  input: string
+): { accessToken: string; refreshToken: string } | null {
+  if (!input.includes('://')) {
+    return null;
+  }
+
+  try {
+    const params = new URLSearchParams(new URL(input).hash.replace(/^#/, ''));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    return accessToken && refreshToken ? { accessToken, refreshToken } : null;
   } catch {
     return null;
   }

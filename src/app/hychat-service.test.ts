@@ -89,6 +89,10 @@ function createMockSupabase() {
           calls.push({ method: 'verifyOtp', args: [input] });
           return { error: null };
         },
+        async setSession(input: { access_token: string; refresh_token: string }) {
+          calls.push({ method: 'setSession', args: [input] });
+          return { error: null };
+        },
         async signOut() {
           calls.push({ method: 'signOut', args: [] });
           return { error: null };

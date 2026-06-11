@@ -29,6 +29,13 @@ function createService() {
       async verifyOtpLink(tokenHash: string) {
         calls.push({ method: 'verifyOtpLink', args: [tokenHash] });
       },
+      async setSessionTokens(accessToken: string, refreshToken: string) {
+        calls.push({ method: 'setSessionTokens', args: [accessToken, refreshToken] });
+      },
+      async getAuthEmail(): Promise<string | null> {
+        calls.push({ method: 'getAuthEmail', args: [] });
+        return null;
+      },
       async startProfile(displayName: string, inviteCode?: string) {
         calls.push({ method: 'startProfile', args: [displayName, inviteCode] });
         return user;
@@ -240,6 +247,68 @@ describe('createChatSession', () => {
     const snapshot = await session.handleLine('/verify 482913');
 
     expect(snapshot.statusText).toBe('Run /start <email> first to request a code.');
+  });
+
+  it('logs in from a pasted post-click redirect URL without /start', async () => {
+    const { service, calls } = createService();
+    let signedIn = false;
+    service.setSessionTokens = async (accessToken: string, refreshToken: string) => {
+      calls.push({ method: 'setSessionTokens', args: [accessToken, refreshToken] });
+      signedIn = true;
+    };
+    service.getCurrentUser = async () => {
+      calls.push({ method: 'getCurrentUser', args: [] });
+      return signedIn
+        ? {
+            id: 'user-1',
+            displayName: 'liudong',
+            displayColor: 'white',
+            role: 'admin' as const,
+            status: 'active' as const
+          }
+        : null;
+    };
+    const session = createChatSession({ service });
+
+    const snapshot = await session.handleLine(
+      '/verify http://localhost:3000/#access_token=header.payload.sig&expires_at=123&refresh_token=tdy4agjcmwcg&token_type=bearer&type=signup'
+    );
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'setSessionTokens', args: ['header.payload.sig', 'tdy4agjcmwcg'] }
+      ])
+    );
+    expect(snapshot.statusText).toBe('Welcome back, liudong.');
+  });
+
+  it('prompts registration after a redirect-URL login with no profile', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    const snapshot = await session.handleLine(
+      '/verify http://localhost:3000/#access_token=header.payload.sig&refresh_token=tdy4agjcmwcg&type=signup'
+    );
+
+    expect(snapshot.user).toBeNull();
+    expect(snapshot.statusText).toBe(
+      'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.'
+    );
+  });
+
+  it('registers without resending an email when already authenticated', async () => {
+    const { service, calls } = createService();
+    service.getAuthEmail = async () => {
+      calls.push({ method: 'getAuthEmail', args: [] });
+      return 'ld@example.com';
+    };
+    const session = createChatSession({ service });
+
+    const snapshot = await session.handleLine('/start liudong ld@example.com');
+
+    expect(snapshot.user?.displayName).toBe('liudong');
+    expect(snapshot.statusText).toBe('Started as liudong (admin).');
+    expect(calls.some((call) => call.method === 'sendOtp')).toBe(false);
   });
 
   it('asks for a nickname when a verified email has no profile yet', async () => {
