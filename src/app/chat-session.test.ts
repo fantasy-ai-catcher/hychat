@@ -236,6 +236,40 @@ describe('createChatSession', () => {
     );
   });
 
+  it('lists room names with numbers when /rooms runs', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    const snapshot = await session.handleLine('/rooms');
+
+    expect(snapshot.statusText).toContain('Rooms (1):');
+    expect(snapshot.statusText).toContain('1. Friends');
+    expect(snapshot.statusText).toContain('/join <number|room name>');
+  });
+
+  it('joins a room by its /rooms list number', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    await session.handleLine('/rooms');
+    const snapshot = await session.handleLine('/join 1');
+
+    expect(snapshot.statusText).toBe('Joined Friends.');
+    expect(snapshot.state.activeRoomId).toBe('room-1');
+  });
+
+  it('rejects a /join number that is out of range', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    await session.handleLine('/start liudong');
+    const snapshot = await session.handleLine('/join 5');
+
+    expect(snapshot.statusText).toBe('Unknown room: 5');
+  });
+
   it('creates a room-bound invite code when a room is active', async () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });

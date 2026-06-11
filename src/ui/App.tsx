@@ -8,7 +8,7 @@ import {
 } from '../app/chat-session.js';
 import { resolveProfileColor } from '../app/profile-colors.js';
 import type { AppState } from './state.js';
-import { createInitialAppState } from './state.js';
+import { buildWelcomeLines, createInitialAppState, resolveShellView } from './state.js';
 
 export type AppProps = {
   state?: AppState;
@@ -176,6 +176,20 @@ export function AppShell({
   const bottomHeight = statusHeight + 4;
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
 
+  if (resolveShellView(state) === 'welcome') {
+    const welcomeHeight = Math.max(shellHeight - statusHeight - 3, 4);
+
+    return (
+      <Box flexDirection="column" height={shellHeight}>
+        {WelcomeScreen({ userLabel, height: welcomeHeight })}
+        <Box flexDirection="column" flexShrink={0}>
+          <StatusText text={statusText} />
+          <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" height={shellHeight}>
       {TopInfoPanel({ state, userLabel, userRole, height: topHeight })}
@@ -185,6 +199,34 @@ export function AppShell({
         <InputComposer promptLabel={promptLabel} input={input} cursorVisible={cursorVisible} />
         <StatusBar state={state} userLabel={userLabel} userRole={userRole} />
       </Box>
+    </Box>
+  );
+}
+
+export type WelcomeScreenProps = {
+  userLabel?: string;
+  height: number;
+};
+
+export function WelcomeScreen({ userLabel, height }: WelcomeScreenProps) {
+  return (
+    <Box
+      flexDirection="column"
+      height={height}
+      flexGrow={1}
+      overflow="hidden"
+      paddingX={2}
+      paddingTop={1}
+    >
+      <Text bold color="cyan">
+        HyChat
+      </Text>
+      <Text> </Text>
+      {buildWelcomeLines(userLabel).map((line, index) => (
+        <Text key={`${index}:${line}`} dimColor={line.startsWith('Type ')}>
+          {line === '' ? ' ' : line}
+        </Text>
+      ))}
     </Box>
   );
 }

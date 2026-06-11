@@ -141,7 +141,7 @@ const helpSections = [
         description: 'Reload the rooms you can access.'
       },
       {
-        usage: '/join <room id|room name>',
+        usage: '/join <number|room id|room name>',
         description: 'Join an existing room by id or name.'
       }
     ]
@@ -410,7 +410,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
       case 'rooms':
         requireUser();
         await loadRooms();
-        statusText = 'Rooms refreshed.';
+        statusText = formatRoomList(state.rooms);
         return;
 
       case 'create-room': {
@@ -715,9 +715,33 @@ function resolveRoom(input: string, rooms: RoomSummary[]): RoomSummary {
     (room) => room.id === input || room.name.toLowerCase() === normalized
   );
 
-  if (!match) {
-    throw new Error(`Unknown room: ${input}`);
+  if (match) {
+    return match;
   }
 
-  return match;
+  if (/^[1-9]\d*$/.test(input)) {
+    const byNumber = rooms[Number(input) - 1];
+    if (byNumber) {
+      return byNumber;
+    }
+  }
+
+  throw new Error(`Unknown room: ${input}`);
+}
+
+// StatusText renders at most 8 lines, so cap the list at 6 rooms.
+function formatRoomList(rooms: RoomSummary[]): string {
+  if (rooms.length === 0) {
+    return 'No rooms yet. Create one with /create <room name>.';
+  }
+
+  const visible = rooms.slice(0, 6);
+  const hiddenCount = rooms.length - visible.length;
+  const lines = [
+    `Rooms (${rooms.length}):`,
+    ...visible.map((room, index) => `  ${index + 1}. ${room.name}`)
+  ];
+  const hint = 'Join with /join <number|room name>.';
+  lines.push(hiddenCount > 0 ? `  +${hiddenCount} more. ${hint}` : hint);
+  return lines.join('\n');
 }
