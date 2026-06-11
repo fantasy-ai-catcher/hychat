@@ -61,6 +61,34 @@ export function createInitialAppState(): AppState {
   };
 }
 
+export type ShellView = 'welcome' | 'chat';
+
+export function resolveShellView(state: Pick<AppState, 'activeRoomId'>): ShellView {
+  return state.activeRoomId ? 'chat' : 'welcome';
+}
+
+export function buildWelcomeLines(userDisplayName?: string): string[] {
+  if (userDisplayName === undefined) {
+    return [
+      'Get started:',
+      '  1. /start <nickname> [invite-code]   create your profile',
+      '  2. /rooms                            list rooms',
+      '  3. /join <room>                      enter a room',
+      '',
+      'Type /help for all commands.'
+    ];
+  }
+
+  return [
+    `Hi ${userDisplayName}! You are not in a room yet.`,
+    '  /rooms                 list rooms',
+    '  /create <room name>    create a room',
+    '  /join <room>           enter a room',
+    '',
+    'Type /help for all commands.'
+  ];
+}
+
 export function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'rooms-loaded':

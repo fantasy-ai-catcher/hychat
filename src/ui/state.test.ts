@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createInitialAppState, reducer } from './state.js';
+import { buildWelcomeLines, createInitialAppState, reducer, resolveShellView } from './state.js';
 
 describe('UI state reducer', () => {
   it('loads rooms and joins a room', () => {
@@ -167,5 +167,49 @@ describe('UI state reducer', () => {
         status: 'connected'
       }).connectionStatus
     ).toBe('connected');
+  });
+});
+
+describe('resolveShellView', () => {
+  it('returns welcome when no room is active', () => {
+    expect(resolveShellView(createInitialAppState())).toBe('welcome');
+  });
+
+  it('returns chat when a room is active', () => {
+    const state = reducer(
+      reducer(createInitialAppState(), {
+        type: 'rooms-loaded',
+        rooms: [{ id: 'room-1', name: 'Friends' }]
+      }),
+      { type: 'room-joined', roomId: 'room-1' }
+    );
+
+    expect(resolveShellView(state)).toBe('chat');
+  });
+});
+
+describe('buildWelcomeLines', () => {
+  it('walks a new user through start, rooms, and join', () => {
+    const lines = buildWelcomeLines();
+    const text = lines.join('\n');
+
+    expect(lines[0]).toBe('Get started:');
+    expect(text).toContain('/start <nickname> [invite-code]');
+    expect(text).toContain('/rooms');
+    expect(text).toContain('/join <room>');
+    expect(text).toContain('/help');
+    expect(text).not.toContain('undefined');
+  });
+
+  it('greets a started user and suggests room commands', () => {
+    const lines = buildWelcomeLines('liudong');
+    const text = lines.join('\n');
+
+    expect(lines[0]).toBe('Hi liudong! You are not in a room yet.');
+    expect(text).not.toContain('/start');
+    expect(text).toContain('/rooms');
+    expect(text).toContain('/create <room name>');
+    expect(text).toContain('/join <room>');
+    expect(text).toContain('/help');
   });
 });

@@ -131,7 +131,7 @@ describe('App', () => {
     });
   });
 
-  it('reserves enough top panel height when no room is active', () => {
+  it('renders a welcome screen instead of placeholder panels when no room is active', () => {
     const shell = AppShell({
       state: createInitialAppState(),
       statusText: 'Use /start <nickname> [invite-code] to start.',
@@ -140,13 +140,32 @@ describe('App', () => {
       cursorVisible: true,
       height: 24
     }) as React.ReactElement<{ children: React.ReactNode[] }>;
-    const topPanel = shell.props.children[0] as React.ReactElement<{ height?: number }>;
-    const text = collectText(topPanel);
+    const text = collectText(shell);
 
-    expect(topPanel.props.height).toBe(5);
-    expect(text).toContain('HyChat No room');
-    expect(text).toContain('Members: -');
-    expect(text).toContain('Stocks: -');
+    expect(text).toContain('Get started:');
+    expect(text).toContain('/start <nickname> [invite-code]');
+    expect(text).toContain('/help');
+    expect(text).not.toContain('Members:');
+    expect(text).not.toContain('Stocks:');
+    expect(text).not.toContain('No messages');
+  });
+
+  it('greets a started user on the welcome screen', () => {
+    const shell = AppShell({
+      state: createInitialAppState(),
+      statusText: 'Signed in as liudong.',
+      userLabel: 'liudong',
+      userRole: 'admin',
+      promptLabel: '>',
+      input: '',
+      cursorVisible: true,
+      height: 24
+    }) as React.ReactElement<{ children: React.ReactNode[] }>;
+    const text = collectText(shell);
+
+    expect(text).toContain('Hi liudong! You are not in a room yet.');
+    expect(text).toContain('/create <room name>');
+    expect(text).not.toContain('/start <nickname>');
   });
 
   it('renders multiple status lines so help output is visible', () => {
