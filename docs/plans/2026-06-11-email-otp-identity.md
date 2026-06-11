@@ -62,10 +62,13 @@ today; OTP is only needed when there is no valid stored session.
    custom SMTP is configured later) or the entire pasted link, from which
    it extracts the `token` parameter and verifies it as a token hash.
    Verified end-to-end against the remote project with an
-   admin-generated link. Built-in SMTP is rate-limited to a few
-   emails/hour — fine for a friends group; if it ever bites, plug a free
-   SMTP tier (still zero cost) and the code path for digit codes lights up
-   with no code change.
+   admin-generated link.
+   **Resolved (2026-06-11):** custom SMTP is now configured via the
+   owner's Gmail app password (smtp.gmail.com:465, sender "HyChat"),
+   which unlocked template editing. Login emails now carry a 6-digit
+   code in the subject and body; `/verify <code>` is the primary flow
+   and pasted links remain supported as a fallback. Email rate limit
+   raised to 30/hour. Zero recurring cost.
 
 ### Service adapter (`src/app/hychat-service.ts`, Layer 3: thin, no new logic)
 
