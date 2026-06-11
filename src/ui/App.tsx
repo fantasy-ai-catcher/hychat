@@ -14,29 +14,20 @@ export type AppProps = {
   state?: AppState;
   service?: CreateChatSessionOptions['service'];
   realtime?: CreateChatSessionOptions['realtime'];
-  defaultDisplayName?: string;
-  autoStartDisplayName?: string;
-  autoStartInviteCode?: string;
 };
 
 function createSnapshot(state: AppState): ChatSessionSnapshot {
   return {
     state,
     user: null,
-    statusText: 'Use /start <nickname> [invite-code] to start.',
+    statusText:
+      'Use /start <email> to log in, or /start <nickname> <email> [invite-code] to register.',
     helpLines: [],
     shouldExit: false
   };
 }
 
-export function App({
-  state: fixedState,
-  service,
-  realtime,
-  defaultDisplayName,
-  autoStartDisplayName,
-  autoStartInviteCode
-}: AppProps) {
+export function App({ state: fixedState, service, realtime }: AppProps) {
   const { exit } = useApp();
   const [input, setInput] = useState('');
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -49,13 +40,10 @@ export function App({
         ? createChatSession({
             service,
             realtime,
-            defaultDisplayName,
-            autoStartDisplayName,
-            autoStartInviteCode,
             onSnapshotChange: setSnapshot
           })
         : undefined,
-    [service, realtime, defaultDisplayName, autoStartDisplayName, autoStartInviteCode]
+    [service, realtime]
   );
 
   useEffect(() => {

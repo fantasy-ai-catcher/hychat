@@ -3,6 +3,7 @@ export type ParsedChatInput =
   | { type: 'message'; body: string }
   | { type: 'error'; message: string }
   | StartCommand
+  | VerifyCommand
   | LogoutCommand
   | RoomsCommand
   | CreateRoomCommand
@@ -25,9 +26,11 @@ export type ParsedChatInput =
 type StartCommand = {
   type: 'command';
   name: 'start';
+  email?: string;
   displayName?: string;
   inviteCode?: string;
 };
+type VerifyCommand = { type: 'command'; name: 'verify'; code: string };
 type LogoutCommand = { type: 'command'; name: 'logout'; confirmed?: boolean };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
 type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
@@ -63,6 +66,12 @@ export function parseChatInput(input: string): ParsedChatInput {
   switch (command) {
     case '/start':
       return parseStartCommand(args);
+    case '/verify':
+      return requireArgument(args[0], 'Usage: /verify <code>', (code) => ({
+        type: 'command',
+        name: 'verify',
+        code
+      }));
     case '/logout':
       return args[0] === 'confirm'
         ? { type: 'command', name: 'logout', confirmed: true }
@@ -114,20 +123,27 @@ export function parseChatInput(input: string): ParsedChatInput {
   }
 }
 
+const startUsage =
+  'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).';
+
 function parseStartCommand(args: string[]): StartCommand | { type: 'error'; message: string } {
   if (args.length === 0) {
     return { type: 'command', name: 'start' };
   }
 
-  if (args.length > 2) {
-    return { type: 'error', message: 'Usage: /start [nickname] [invite-code]' };
+  const emails = args.filter((arg) => arg.includes('@'));
+  const rest = args.filter((arg) => !arg.includes('@'));
+
+  if (emails.length !== 1 || rest.length > 2 || args.length > 3) {
+    return { type: 'error', message: startUsage };
   }
 
   return {
     type: 'command',
     name: 'start',
-    displayName: args[0],
-    inviteCode: args[1]
+    email: emails[0],
+    displayName: rest[0],
+    inviteCode: rest[1]
   };
 }
 

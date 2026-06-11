@@ -54,6 +54,13 @@ describe('App', () => {
       async getCurrentUser() {
         return null;
       },
+      async sendOtp() {},
+      async verifyOtp() {},
+      async verifyOtpLink() {},
+      async setSessionTokens() {},
+      async getAuthEmail() {
+        return null;
+      },
       async startProfile() {
         return {
           id: 'user-1',
@@ -134,7 +141,7 @@ describe('App', () => {
   it('renders a welcome screen instead of placeholder panels when no room is active', () => {
     const shell = AppShell({
       state: createInitialAppState(),
-      statusText: 'Use /start <nickname> [invite-code] to start.',
+      statusText: 'Use /start <email> to log in.',
       promptLabel: '>',
       input: '',
       cursorVisible: true,
@@ -143,7 +150,8 @@ describe('App', () => {
     const text = collectText(shell);
 
     expect(text).toContain('Get started:');
-    expect(text).toContain('/start <nickname> [invite-code]');
+    expect(text).toContain('/start <nickname> <email> [invite-code]');
+    expect(text).toContain('/verify <code>');
     expect(text).toContain('/help');
     expect(text).not.toContain('Members:');
     expect(text).not.toContain('Stocks:');
