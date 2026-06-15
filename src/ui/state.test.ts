@@ -271,4 +271,11 @@ describe('computeMemberStatuses', () => {
     // user-2 is typing in the set but offline, so it must not surface.
     expect(result.find((m) => m.userId === 'user-2')?.typing).toBe(false);
   });
+
+  it('treats the current user as online without waiting on presence', () => {
+    // Empty presence set, but user-2 is the current client → online anyway.
+    const result = computeMemberStatuses(members, [], [], 'user-2');
+    expect(result.find((m) => m.userId === 'user-2')?.status).toBe('online');
+    expect(result.find((m) => m.userId === 'user-1')?.status).toBe('offline');
+  });
 });

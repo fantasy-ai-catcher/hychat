@@ -35,13 +35,19 @@ export type MemberView = RoomMemberSummary & {
 
 // Pure projection of the persistent member list onto live presence + typing.
 // A member present in the realtime presence set is online; everyone else is a
-// member who is currently disconnected (offline).
+// member who is currently disconnected (offline). The current user is online
+// by definition while in the room, so they never wait on the presence
+// round-trip (which can lag several seconds).
 export function computeMemberStatuses(
   members: RoomMemberSummary[],
   onlineUserIds: string[],
-  typingUserIds: string[]
+  typingUserIds: string[],
+  currentUserId?: string
 ): MemberView[] {
   const online = new Set(onlineUserIds);
+  if (currentUserId) {
+    online.add(currentUserId);
+  }
   const typing = new Set(typingUserIds);
   return members.map((member) => ({
     ...member,

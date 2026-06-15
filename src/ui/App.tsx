@@ -167,6 +167,7 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       }
       userLabel={snapshot.user?.displayName}
       userRole={snapshot.user?.role}
+      currentUserId={snapshot.user?.id}
       promptLabel=">"
       input={input}
       cursorVisible={cursorVisible}
@@ -183,6 +184,7 @@ type AppShellProps = {
   busyElapsed?: string;
   userLabel?: string;
   userRole?: string;
+  currentUserId?: string;
   promptLabel: string;
   input: string;
   cursorVisible: boolean;
@@ -197,6 +199,7 @@ export function AppShell({
   busyElapsed,
   userLabel,
   userRole,
+  currentUserId,
   promptLabel,
   input,
   cursorVisible,
@@ -227,7 +230,7 @@ export function AppShell({
 
   return (
     <Box flexDirection="column" height={shellHeight}>
-      {TopInfoPanel({ state, userLabel, userRole, height: topHeight })}
+      {TopInfoPanel({ state, userLabel, userRole, currentUserId, height: topHeight })}
       {MessageViewport({ messages: messages.slice(-chatHeight), height: chatHeight })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
@@ -270,17 +273,19 @@ export type TopInfoPanelProps = {
   state: AppState;
   userLabel?: string;
   userRole?: string;
+  currentUserId?: string;
   height?: number;
 };
 
-export function TopInfoPanel({ state, userLabel, userRole, height }: TopInfoPanelProps) {
+export function TopInfoPanel({ state, userLabel, userRole, currentUserId, height }: TopInfoPanelProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const members = roomId
     ? computeMemberStatuses(
         state.membersByRoom[roomId] ?? [],
         state.onlineByRoom[roomId] ?? [],
-        state.typingByRoom[roomId] ?? []
+        state.typingByRoom[roomId] ?? [],
+        currentUserId
       )
     : [];
   const visibleMembers = members.slice(0, 3);
