@@ -54,6 +54,15 @@ describe('room realtime subscriptions', () => {
         filter: {
           event: '*',
           schema: 'public',
+          table: 'room_members',
+          filter: 'room_id=eq.room-1'
+        }
+      },
+      {
+        event: 'postgres_changes',
+        filter: {
+          event: '*',
+          schema: 'public',
           table: 'stock_quotes'
         }
       }

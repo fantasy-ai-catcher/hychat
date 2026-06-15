@@ -38,6 +38,12 @@ type WatchlistChange = {
   created_at?: string;
 };
 
+type MemberChange = {
+  room_id: string;
+  user_id: string;
+  role?: 'owner' | 'member';
+};
+
 type StockQuoteChange = {
   canonical_symbol: string;
   price?: number | null;
@@ -54,6 +60,7 @@ export type RoomRealtimeOptions = {
   roomId: string;
   onMessage: (message: RoomMessageChange) => void;
   onWatchlistChange: (change: WatchlistChange) => void;
+  onMembersChange?: (change: MemberChange) => void;
   onQuoteChange?: (quote: StockQuoteChange) => void;
   onStatus?: (status: string) => void;
 };
@@ -85,6 +92,19 @@ export function subscribeToRoomRealtime(
       },
       (payload: RealtimePayload<Record<string, unknown>>) =>
         options.onWatchlistChange(payload.new as WatchlistChange)
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'room_members',
+        filter: `room_id=eq.${options.roomId}`
+      },
+      (payload: RealtimePayload<Record<string, unknown>>) =>
+        options.onMembersChange?.(
+          (payload.new ?? payload.old) as MemberChange
+        )
     )
     .on(
       'postgres_changes',

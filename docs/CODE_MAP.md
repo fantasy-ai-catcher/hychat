@@ -35,7 +35,7 @@ src/
 ├── supabase/
 │   ├── client.ts             Supabase client factory
 │   └── realtime.ts           realtime topic helpers + subscribeToRoomRealtime
-│                             (postgres_changes for messages / watchlist / quotes)
+│                             (postgres_changes for messages / watchlist / members / quotes)
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN)
     ├── cache.ts              [L1] quote cache TTL policy

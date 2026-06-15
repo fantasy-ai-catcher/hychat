@@ -605,7 +605,45 @@ describe('createChatSession', () => {
       expect.objectContaining({
         onMessage: expect.any(Function),
         onWatchlistChange: expect.any(Function),
+        onMembersChange: expect.any(Function),
         onQuoteChange: expect.any(Function)
+      })
+    );
+  });
+
+  it('reloads members and emits a snapshot when membership changes', async () => {
+    const { service, calls } = createService();
+    let membersHandler: (() => void) | undefined;
+    const onSnapshotChange = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        membersHandler = handlers.onMembersChange;
+        return { unsubscribe: vi.fn() };
+      })
+    };
+    const session = createChatSession({ service, realtime, onSnapshotChange });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    onSnapshotChange.mockClear();
+    const listMemberCallsBefore = calls.filter((c) => c.method === 'listMembers').length;
+
+    membersHandler?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      calls.filter((c) => c.method === 'listMembers').length
+    ).toBe(listMemberCallsBefore + 1);
+    expect(onSnapshotChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          membersByRoom: expect.objectContaining({
+            'room-1': expect.arrayContaining([
+              expect.objectContaining({ displayName: 'liudong' })
+            ])
+          })
+        })
       })
     );
   });

@@ -94,6 +94,7 @@ type RealtimeLike = {
     handlers: {
       onMessage: (message: ChatMessageRow) => void;
       onWatchlistChange: () => void;
+      onMembersChange?: () => void;
       onQuoteChange?: (quote: StockQuoteChangeRow) => void;
       onStatus?: (status: string) => void;
     }
@@ -341,6 +342,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
     }
   }
 
+  async function loadMembers(roomId: string): Promise<void> {
+    const members = options.service.listMembers
+      ? await options.service.listMembers(roomId)
+      : [];
+    apply({ type: 'members-loaded', roomId, members: members.map(toRoomMemberSummary) });
+  }
+
   async function refreshQuotes(symbols: string[], force: boolean): Promise<void> {
     const result = (await options.service.getQuotes(symbols, force)) as QuoteApiResult;
     const quotes = (result.quotes ?? []).map(toQuoteSummary);
@@ -367,6 +375,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
       },
       onWatchlistChange() {
         void loadRoomData(roomId).then(emitSnapshotChange);
+      },
+      onMembersChange() {
+        void loadMembers(roomId).then(emitSnapshotChange);
       },
       onQuoteChange(quote) {
         apply({
