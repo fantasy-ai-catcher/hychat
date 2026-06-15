@@ -11,6 +11,14 @@ export type RoomSummary = {
   name: string;
 };
 
+export type RoomWithCountRow = {
+  id: string;
+  name: string;
+  owner_id?: string;
+  member_count?: number | string;
+  is_member?: boolean;
+};
+
 export type ChatMessageRow = {
   id: string;
   room_id: string;
@@ -149,10 +157,21 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       return result.data.user?.email ?? null;
     },
 
-    async startProfile(displayName: string, inviteCode?: string): Promise<HychatUser> {
-      const result = await supabase.rpc('start_profile', {
-        target_display_name: displayName,
+    async ensureProfile(inviteCode?: string): Promise<HychatUser> {
+      const result = await supabase.rpc('ensure_profile', {
         invite_code: inviteCode ?? null
+      });
+      const profile = await ensureData<ProfileRow | ProfileRow[]>(result);
+      const row = Array.isArray(profile) ? profile[0] : profile;
+      if (!row) {
+        throw new Error('Supabase did not return a profile.');
+      }
+      return toHychatUser(row);
+    },
+
+    async setDisplayName(displayName: string): Promise<HychatUser> {
+      const result = await supabase.rpc('set_display_name', {
+        target_display_name: displayName
       });
       const profile = await ensureData<ProfileRow | ProfileRow[]>(result);
       const row = Array.isArray(profile) ? profile[0] : profile;
@@ -179,10 +198,8 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       ensureNoError(result.error);
     },
 
-    async createInviteCode(roomId?: string): Promise<string> {
-      const result = await supabase.rpc('create_invite_code', {
-        target_room_id: roomId ?? null
-      });
+    async createInviteCode(): Promise<string> {
+      const result = await supabase.rpc('create_invite_code', {});
       return ensureData<string>(result);
     },
 
@@ -196,12 +213,14 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       await ensureData(result);
     },
 
-    async listRooms(): Promise<RoomSummary[]> {
-      const result = await supabase
-        .from('rooms')
-        .select('id,name,owner_id,created_at,updated_at')
-        .order('created_at', { ascending: false });
-      return ensureData<RoomSummary[]>(result);
+    async listRoomsWithCounts(): Promise<RoomWithCountRow[]> {
+      const result = await supabase.rpc('list_rooms_with_counts', {});
+      return ensureData<RoomWithCountRow[]>(result);
+    },
+
+    async joinRoom(roomId: string): Promise<void> {
+      const result = await supabase.rpc('join_room', { target_room_id: roomId });
+      await ensureData(result);
     },
 
     async createRoom(name: string, userId: string): Promise<RoomSummary> {
@@ -219,14 +238,6 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       );
 
       return room;
-    },
-
-    async inviteMember(roomId: string, displayName: string): Promise<unknown> {
-      const result = await supabase.rpc('invite_room_member_by_display_name', {
-        target_room_id: roomId,
-        target_display_name: displayName
-      });
-      return ensureData(result);
     },
 
     async listMembers(roomId: string): Promise<RoomMemberRow[]> {

@@ -18,6 +18,16 @@ Let this drive every technical and product decision:
   friends, not customers; a one-time extra step in onboarding is fine if it
   removes a whole failure mode.
 
+## Code map
+
+A per-file feature index (file-tree form) lives in
+[docs/CODE_MAP.md](docs/CODE_MAP.md). Read it to find which file owns a feature
+instead of grepping the code, then open that file directly.
+
+When you add, remove, rename, or move a feature/module (a new command, RPC, UI
+surface, script, etc.), update `docs/CODE_MAP.md` in the same change so it keeps
+matching the code. A stale map is a bug.
+
 ## Development methodology
 
 Every change follows the loop: **plan → implement → verify**. Do NOT apply

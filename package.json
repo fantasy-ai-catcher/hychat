@@ -16,6 +16,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "tsx src/index.ts",
+    "dev:login": "node scripts/dev-login.mjs",
+    "dev:tmux": "bash scripts/dev-tmux.sh",
     "pack:brew": "node scripts/build-homebrew-release.mjs",
     "prepack": "pnpm build",
     "start": "node dist/index.js",

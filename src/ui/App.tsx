@@ -27,7 +27,7 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
     state,
     user: null,
     statusText:
-      'Use /start <email> to log in, or /start <nickname> <email> [invite-code] to register.',
+      'Use /start <email> to log in, or /start <email> <invite-code> to register.',
     isBusy: false,
     helpLines: [],
     shouldExit: false

@@ -37,15 +37,20 @@ function createService() {
         calls.push({ method: 'getAuthEmail', args: [] });
         return null;
       },
-      async startProfile(displayName: string, inviteCode?: string) {
-        calls.push({ method: 'startProfile', args: [displayName, inviteCode] });
-        return user;
+      async ensureProfile(inviteCode?: string) {
+        calls.push({ method: 'ensureProfile', args: [inviteCode] });
+        return { ...user };
+      },
+      async setDisplayName(displayName: string) {
+        calls.push({ method: 'setDisplayName', args: [displayName] });
+        user.displayName = displayName;
+        return { ...user };
       },
       async signOut() {
         calls.push({ method: 'signOut', args: [] });
       },
-      async createInviteCode(roomId?: string) {
-        calls.push({ method: 'createInviteCode', args: [roomId] });
+      async createInviteCode() {
+        calls.push({ method: 'createInviteCode', args: [] });
         return 'invite123';
       },
       async listInviteCodes() {
@@ -70,16 +75,16 @@ function createService() {
       async revokeInviteCode(code: string) {
         calls.push({ method: 'revokeInviteCode', args: [code] });
       },
-      async listRooms() {
-        calls.push({ method: 'listRooms', args: [] });
-        return [room];
+      async listRoomsWithCounts() {
+        calls.push({ method: 'listRoomsWithCounts', args: [] });
+        return [{ ...room, member_count: 2, is_member: true }];
       },
       async createRoom(name: string, userId: string) {
         calls.push({ method: 'createRoom', args: [name, userId] });
         return room;
       },
-      async inviteMember(roomId: string, displayName: string) {
-        calls.push({ method: 'inviteMember', args: [roomId, displayName] });
+      async joinRoom(roomId: string) {
+        calls.push({ method: 'joinRoom', args: [roomId] });
       },
       async listMembers(roomId: string) {
         calls.push({ method: 'listMembers', args: [roomId] });
@@ -164,7 +169,7 @@ function createService() {
 }
 
 async function signIn(session: { handleLine: (line: string) => Promise<unknown> }) {
-  await session.handleLine('/start liudong ld@example.com invite123');
+  await session.handleLine('/start ld@example.com invite123');
   await session.handleLine('/verify 482913');
 }
 
@@ -173,7 +178,7 @@ describe('createChatSession', () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    let snapshot = await session.handleLine('/start liudong ld@example.com invite123');
+    let snapshot = await session.handleLine('/start ld@example.com invite123');
 
     expect(snapshot.user).toBeNull();
     expect(snapshot.statusText).toBe(
@@ -186,13 +191,17 @@ describe('createChatSession', () => {
     snapshot = await session.handleLine('/verify 482913');
 
     expect(snapshot.user?.id).toBe('user-1');
-    expect(snapshot.statusText).toBe('Started as liudong (admin).');
-    expect(snapshot.state.rooms).toEqual([{ id: 'room-1', name: 'Friends' }]);
+    expect(snapshot.statusText).toBe(
+      'Signed in as liudong (admin). Change your name any time with /name <new name>.'
+    );
+    expect(snapshot.state.rooms).toEqual([
+      { id: 'room-1', name: 'Friends', memberCount: 2, isMember: true }
+    ]);
     expect(calls).toEqual(
       expect.arrayContaining([
         { method: 'verifyOtp', args: ['ld@example.com', '482913'] },
-        { method: 'startProfile', args: ['liudong', 'invite123'] },
-        { method: 'listRooms', args: [] }
+        { method: 'ensureProfile', args: ['invite123'] },
+        { method: 'listRoomsWithCounts', args: [] }
       ])
     );
   });
@@ -223,14 +232,14 @@ describe('createChatSession', () => {
 
     expect(snapshot.user?.displayName).toBe('liudong');
     expect(snapshot.statusText).toBe('Welcome back, liudong.');
-    expect(calls.filter((call) => call.method === 'startProfile')).toEqual([]);
+    expect(calls.filter((call) => call.method === 'ensureProfile')).toEqual([]);
   });
 
   it('accepts a pasted login link in /verify', async () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start liudong ld@example.com');
+    await session.handleLine('/start ld@example.com');
     await session.handleLine(
       '/verify https://example.supabase.co/auth/v1/verify?token=pkce_abc123&type=magiclink&redirect_to=http://localhost:3000'
     );
@@ -283,17 +292,19 @@ describe('createChatSession', () => {
     expect(snapshot.statusText).toBe('Welcome back, liudong.');
   });
 
-  it('prompts registration after a redirect-URL login with no profile', async () => {
+  it('surfaces the invite-code error when a brand-new email registers without one', async () => {
     const { service } = createService();
+    service.ensureProfile = async () => {
+      throw new Error('invite_code_required');
+    };
     const session = createChatSession({ service });
 
-    const snapshot = await session.handleLine(
-      '/verify http://localhost:3000/#access_token=header.payload.sig&refresh_token=tdy4agjcmwcg&type=signup'
-    );
+    await session.handleLine('/start ld@example.com');
+    const snapshot = await session.handleLine('/verify 482913');
 
     expect(snapshot.user).toBeNull();
     expect(snapshot.statusText).toBe(
-      'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.'
+      'An invite code is required to register: /start <email> <invite-code>.'
     );
   });
 
@@ -305,30 +316,40 @@ describe('createChatSession', () => {
     };
     const session = createChatSession({ service });
 
-    const snapshot = await session.handleLine('/start liudong ld@example.com');
+    const snapshot = await session.handleLine('/start ld@example.com invite123');
 
     expect(snapshot.user?.displayName).toBe('liudong');
-    expect(snapshot.statusText).toBe('Started as liudong (admin).');
+    expect(snapshot.statusText).toBe(
+      'Signed in as liudong (admin). Change your name any time with /name <new name>.'
+    );
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'ensureProfile', args: ['invite123'] }])
+    );
     expect(calls.some((call) => call.method === 'sendOtp')).toBe(false);
   });
 
-  it('asks for a nickname when a verified email has no profile yet', async () => {
+  it('renames the profile with /name', async () => {
     const { service, calls } = createService();
     const session = createChatSession({ service });
 
-    await session.handleLine('/start ld@example.com');
-    let snapshot = await session.handleLine('/verify 482913');
+    await signIn(session);
+    const snapshot = await session.handleLine('/name Cool Cat');
 
-    expect(snapshot.user).toBeNull();
-    expect(snapshot.statusText).toBe(
-      'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.'
+    expect(snapshot.user?.displayName).toBe('Cool Cat');
+    expect(snapshot.statusText).toBe('Name set to Cool Cat.');
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'setDisplayName', args: ['Cool Cat'] }])
     );
+  });
 
-    snapshot = await session.handleLine('/start liudong ld@example.com invite123');
+  it('rejects /name before signing in', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
 
-    expect(snapshot.user?.displayName).toBe('liudong');
-    expect(snapshot.statusText).toBe('Started as liudong (admin).');
-    expect(calls.filter((call) => call.method === 'sendOtp')).toHaveLength(1);
+    const snapshot = await session.handleLine('/name Cool Cat');
+
+    expect(snapshot.statusText).toBe('Please /start first.');
+    expect(calls.some((call) => call.method === 'setDisplayName')).toBe(false);
   });
 
   it('shows usage for a bare /start', async () => {
@@ -337,9 +358,7 @@ describe('createChatSession', () => {
 
     const snapshot = await session.handleLine('/start');
 
-    expect(snapshot.statusText).toBe(
-      'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).'
-    );
+    expect(snapshot.statusText).toBe('Usage: /start <email> [invite-code].');
   });
 
   it('starts with an invite code and can create an invite code as admin', async () => {
@@ -350,17 +369,17 @@ describe('createChatSession', () => {
     const snapshot = await session.handleLine('/invite-code');
 
     expect(snapshot.statusText).toBe(
-      'Invite code: invite123 (activates a profile; share it with one friend)'
+      'Invite code: invite123 (lets one friend register; they pick any room with /rooms then /join)'
     );
     expect(calls).toEqual(
       expect.arrayContaining([
-        { method: 'startProfile', args: ['liudong', 'invite123'] },
-        { method: 'createInviteCode', args: [undefined] }
+        { method: 'ensureProfile', args: ['invite123'] },
+        { method: 'createInviteCode', args: [] }
       ])
     );
   });
 
-  it('lists room names with numbers when /rooms runs', async () => {
+  it('lists all rooms with member counts and a joined marker when /rooms runs', async () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
@@ -368,12 +387,12 @@ describe('createChatSession', () => {
     const snapshot = await session.handleLine('/rooms');
 
     expect(snapshot.statusText).toContain('Rooms (1):');
-    expect(snapshot.statusText).toContain('1. Friends');
+    expect(snapshot.statusText).toContain('1. Friends (2) (joined)');
     expect(snapshot.statusText).toContain('/join <number|room name>');
   });
 
-  it('joins a room by its /rooms list number', async () => {
-    const { service } = createService();
+  it('self-joins any room by its /rooms list number', async () => {
+    const { service, calls } = createService();
     const session = createChatSession({ service });
 
     await signIn(session);
@@ -382,6 +401,9 @@ describe('createChatSession', () => {
 
     expect(snapshot.statusText).toBe('Joined Friends.');
     expect(snapshot.state.activeRoomId).toBe('room-1');
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'joinRoom', args: ['room-1'] }])
+    );
   });
 
   it('rejects a /join number that is out of range', async () => {
@@ -392,22 +414,6 @@ describe('createChatSession', () => {
     const snapshot = await session.handleLine('/join 5');
 
     expect(snapshot.statusText).toBe('Unknown room: 5');
-  });
-
-  it('creates a room-bound invite code when a room is active', async () => {
-    const { service, calls } = createService();
-    const session = createChatSession({ service });
-
-    await signIn(session);
-    await session.handleLine('/join Friends');
-    const snapshot = await session.handleLine('/invite-code');
-
-    expect(snapshot.statusText).toBe(
-      'Invite code: invite123 (activates a profile and joins Friends)'
-    );
-    expect(calls).toEqual(
-      expect.arrayContaining([{ method: 'createInviteCode', args: ['room-1'] }])
-    );
   });
 
   it('lists and revokes invite codes', async () => {
@@ -568,13 +574,14 @@ describe('createChatSession', () => {
     const snapshot = await session.handleLine('/help');
 
     expect(snapshot.statusText).toContain('Start');
-    expect(snapshot.statusText).toContain('/start <nickname> <email> [invite-code]');
+    expect(snapshot.statusText).toContain('/start <email> [invite-code]');
+    expect(snapshot.statusText).toContain('/name <new name>');
     expect(snapshot.statusText).toContain('/verify <code>');
     expect(snapshot.statusText).toContain('Sends a code to your email');
     expect(snapshot.statusText).toContain('/create <room name>');
     expect(snapshot.statusText).toContain('Create a room');
-    expect(snapshot.statusText).toContain('/invite <nickname>');
-    expect(snapshot.statusText).toContain('Invite an active profile');
+    expect(snapshot.statusText).toContain('/invite-code');
+    expect(snapshot.statusText).not.toContain('/invite <nickname>');
     expect(snapshot.statusText).toContain('/watch add <symbol>');
     expect(snapshot.statusText).toContain('Add a stock');
     expect(snapshot.statusText).toContain('/refresh [symbol]');
@@ -740,13 +747,13 @@ describe('buildPendingStatusText', () => {
   it.each([
     ['hello there', 'Sending…'],
     ['/start ld@example.com', 'Signing in…'],
-    ['/start liudong ld@example.com invite123', 'Signing in…'],
+    ['/start ld@example.com invite123', 'Signing in…'],
     ['/verify 482913', 'Verifying…'],
+    ['/name Cool Cat', 'Saving name…'],
     ['/logout confirm', 'Signing out…'],
     ['/rooms', 'Loading rooms…'],
     ['/create My Room', 'Creating room My Room…'],
     ['/join Friends', 'Joining Friends…'],
-    ['/invite alice', 'Inviting alice…'],
     ['/invite-code', 'Creating invite code…'],
     ['/invite-code list', 'Loading invite codes…'],
     ['/invite-code revoke invite123', 'Revoking invite code…'],

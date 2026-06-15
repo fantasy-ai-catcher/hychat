@@ -13,6 +13,7 @@ import type {
   ChatMessageRow,
   HychatUser,
   RoomSummary as ServiceRoomSummary,
+  RoomWithCountRow,
   WatchlistRow
 } from './hychat-service.js';
 import {
@@ -54,15 +55,16 @@ type ChatServiceLike = {
   verifyOtpLink: (tokenHash: string) => Promise<void>;
   setSessionTokens: (accessToken: string, refreshToken: string) => Promise<void>;
   getAuthEmail: () => Promise<string | null>;
-  startProfile: (displayName: string, inviteCode?: string) => Promise<HychatUser>;
+  ensureProfile: (inviteCode?: string) => Promise<HychatUser>;
+  setDisplayName: (displayName: string) => Promise<HychatUser>;
   updateProfileColor: (color: string) => Promise<HychatUser>;
   signOut: () => Promise<void>;
-  createInviteCode: (roomId?: string) => Promise<string>;
+  createInviteCode: () => Promise<string>;
   listInviteCodes?: () => Promise<InviteCodeRow[]>;
   revokeInviteCode?: (code: string) => Promise<unknown>;
-  listRooms: () => Promise<ServiceRoomSummary[]>;
+  listRoomsWithCounts: () => Promise<RoomWithCountRow[]>;
   createRoom: (name: string, userId: string) => Promise<ServiceRoomSummary>;
-  inviteMember: (roomId: string, displayName: string) => Promise<unknown>;
+  joinRoom: (roomId: string) => Promise<void>;
   listMembers?: (roomId: string) => Promise<MemberRow[]>;
   listRecentMessages: (roomId: string) => Promise<ChatMessageRow[]>;
   sendTextMessage: (input: {
@@ -118,9 +120,9 @@ const helpSections = [
     title: 'Start',
     commands: [
       {
-        usage: '/start <email> | /start <nickname> <email> [invite-code]',
+        usage: '/start <email> [invite-code]',
         description:
-          'Log in (email only) or register (nickname + email). Sends a code to your email.'
+          'Log in or register with your email. A new account needs an invite code. Sends a code to your email.'
       },
       {
         usage: '/verify <code>',
@@ -145,11 +147,11 @@ const helpSections = [
       },
       {
         usage: '/rooms',
-        description: 'Reload the rooms you can access.'
+        description: 'List every room with its member count; (joined) marks yours.'
       },
       {
         usage: '/join <number|room id|room name>',
-        description: 'Join an existing room by id or name.'
+        description: 'Join any room and enter it. No invite needed.'
       }
     ]
   },
@@ -157,13 +159,9 @@ const helpSections = [
     title: 'Members',
     commands: [
       {
-        usage: '/invite <nickname>',
-        description: 'Invite an active profile into the current room.'
-      },
-      {
         usage: '/invite-code',
         description:
-          'Create an invite code. Inside a room the code also joins the friend to that room (room owner or admin); outside a room it is a global code (admin only).'
+          'Create a code that lets one friend register an account (admin only). They join rooms themselves with /rooms and /join.'
       },
       {
         usage: '/invite-code list',
@@ -203,6 +201,10 @@ const helpSections = [
   {
     title: 'Profile',
     commands: [
+      {
+        usage: '/name <new name>',
+        description: 'Change the name shown in rooms. You can change it any time.'
+      },
       {
         usage: '/color',
         description: 'Show your current profile color and the selectable palette.'
@@ -246,6 +248,8 @@ export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
       return parsed.email ? 'Signing in…' : null;
     case 'verify':
       return 'Verifying…';
+    case 'name':
+      return 'Saving name…';
     case 'logout':
       return parsed.confirmed ? 'Signing out…' : null;
     case 'rooms':
@@ -254,8 +258,6 @@ export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
       return `Creating room ${parsed.nameText}…`;
     case 'join':
       return `Joining ${parsed.room}…`;
-    case 'invite':
-      return `Inviting ${parsed.displayName}…`;
     case 'invite-code':
       return 'Creating invite code…';
     case 'invite-code-list':
@@ -293,7 +295,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
   let isBusy = false;
   let shouldExit = false;
   let subscription: RoomSubscription | undefined;
-  let pendingAuth: { email: string; displayName?: string; inviteCode?: string } | null = null;
+  let pendingAuth: { email: string; inviteCode?: string } | null = null;
   let verifiedEmail: string | null = null;
 
   function snapshot(): ChatSessionSnapshot {
@@ -309,7 +311,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
   }
 
   async function loadRooms(): Promise<void> {
-    const rooms = await options.service.listRooms();
+    const rooms = await options.service.listRoomsWithCounts();
     apply({ type: 'rooms-loaded', rooms: rooms.map(toRoomSummary) });
   }
 
@@ -411,19 +413,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
           return;
         }
 
-        if (command.displayName) {
-          const authedEmail = verifiedEmail ?? (await options.service.getAuthEmail());
-          if (authedEmail === command.email) {
-            user = await options.service.startProfile(command.displayName, command.inviteCode);
-            await enterSignedInState(`Started as ${user.displayName} (${user.role}).`);
-            return;
-          }
+        const authedEmail = verifiedEmail ?? (await options.service.getAuthEmail());
+        if (authedEmail === command.email) {
+          user = await options.service.ensureProfile(command.inviteCode);
+          await enterSignedInState(signedInStatus(user));
+          return;
         }
 
         await options.service.sendOtp(command.email);
         pendingAuth = {
           email: command.email,
-          displayName: command.displayName,
           inviteCode: command.inviteCode
         };
         statusText = `Code sent to ${command.email}. Run /verify with the code or link from the email.`;
@@ -458,18 +457,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
           return;
         }
 
-        if (!pendingAuth?.displayName) {
-          statusText =
-            'Verified, but no profile for this email yet. Run /start <nickname> <email> [invite-code] to register.';
-          return;
-        }
-
-        user = await options.service.startProfile(
-          pendingAuth.displayName,
-          pendingAuth.inviteCode
-        );
+        user = await options.service.ensureProfile(pendingAuth?.inviteCode);
         pendingAuth = null;
-        await enterSignedInState(`Started as ${user.displayName} (${user.role}).`);
+        await enterSignedInState(signedInStatus(user));
+        return;
+      }
+
+      case 'name': {
+        requireUser();
+        user = await options.service.setDisplayName(command.displayName);
+        statusText = `Name set to ${user.displayName}.`;
         return;
       }
 
@@ -491,14 +488,8 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
       case 'invite-code': {
         requireUser();
-        const roomId = state.activeRoomId;
-        const code = await options.service.createInviteCode(roomId);
-        const roomName = roomId
-          ? state.rooms.find((room) => room.id === roomId)?.name ?? roomId
-          : undefined;
-        statusText = roomName
-          ? `Invite code: ${code} (activates a profile and joins ${roomName})`
-          : `Invite code: ${code} (activates a profile; share it with one friend)`;
+        const code = await options.service.createInviteCode();
+        statusText = `Invite code: ${code} (lets one friend register; they pick any room with /rooms then /join)`;
         return;
       }
 
@@ -548,16 +539,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
         requireUser();
         await loadRooms();
         const room = resolveRoom(command.room, state.rooms);
+        await options.service.joinRoom(room.id);
         await joinRoom(room.id);
         statusText = `Joined ${room.name}.`;
-        return;
-      }
-
-      case 'invite': {
-        requireUser();
-        const roomId = requireActiveRoom();
-        await options.service.inviteMember(roomId, command.displayName);
-        statusText = `Invited ${command.displayName}.`;
         return;
       }
 
@@ -744,8 +728,14 @@ function formatHelpText(sections: HelpSection[]): string {
     .join('\n\n');
 }
 
-function toRoomSummary(room: ServiceRoomSummary): RoomSummary {
-  return { id: room.id, name: room.name };
+function toRoomSummary(room: ServiceRoomSummary | RoomWithCountRow): RoomSummary {
+  const withCount = room as RoomWithCountRow;
+  return {
+    id: room.id,
+    name: room.name,
+    memberCount: withCount.member_count === undefined ? undefined : Number(withCount.member_count),
+    isMember: withCount.is_member
+  };
 }
 
 function toChatMessage(message: ChatMessageRow): ChatMessage {
@@ -789,8 +779,8 @@ function formatInviteCodeRow(row: InviteCodeRow): string {
 }
 
 const serviceErrorMessages: Record<string, string> = {
-  display_name_taken: 'That nickname is already taken. Pick another with /start <nickname>.',
-  invite_code_required: 'An invite code is required: /start <nickname> <invite-code>.',
+  display_name_taken: 'That name is already taken. Pick another with /name <new name>.',
+  invite_code_required: 'An invite code is required to register: /start <email> <invite-code>.',
   invalid_invite_code: 'That invite code is invalid, used, or expired.',
   not_admin: 'Only the admin can create global invite codes. Inside a room you own, /invite-code creates a room invite.',
   not_room_owner: 'Only the room owner can do that.',
@@ -836,10 +826,13 @@ function extractRedirectSession(
   }
 }
 
-const startUsageStatus =
-  'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).';
+const startUsageStatus = 'Usage: /start <email> [invite-code].';
 const signedOutStatus =
-  'Use /start <email> to log in, or /start <nickname> <email> [invite-code] to register.';
+  'Use /start <email> to log in, or /start <email> <invite-code> to register.';
+
+function signedInStatus(user: HychatUser): string {
+  return `Signed in as ${user.displayName} (${user.role}). Change your name any time with /name <new name>.`;
+}
 
 function normalizeSymbol(input: string): string {
   const parsed = parseCanonicalSymbol(input);
@@ -880,9 +873,13 @@ function formatRoomList(rooms: RoomSummary[]): string {
   const hiddenCount = rooms.length - visible.length;
   const lines = [
     `Rooms (${rooms.length}):`,
-    ...visible.map((room, index) => `  ${index + 1}. ${room.name}`)
+    ...visible.map((room, index) => {
+      const count = room.memberCount === undefined ? '' : ` (${room.memberCount})`;
+      const joined = room.isMember ? ' (joined)' : '';
+      return `  ${index + 1}. ${room.name}${count}${joined}`;
+    })
   ];
-  const hint = 'Join with /join <number|room name>.';
+  const hint = 'Join any with /join <number|room name>.';
   lines.push(hiddenCount > 0 ? `  +${hiddenCount} more. ${hint}` : hint);
   return lines.join('\n');
 }

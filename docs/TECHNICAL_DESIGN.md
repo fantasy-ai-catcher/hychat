@@ -155,14 +155,15 @@ Optional Supabase Cron -> Edge Function refresh-stock-quotes -> Postgres stock_q
 
 ### 5.1 profiles
 
-保存用户展示信息。入口为昵称 + 邀请码，底层使用 Supabase Anonymous Auth。
+保存用户展示信息。入口为邮箱 OTP 登录（新账号需邀请码），底层使用 Supabase Auth。
+身份是邮箱；display_name 是与身份解耦的显示名，可改、不要求唯一。
 
 字段：
 
 ```text
 id uuid primary key references auth.users(id)
-email text unique  -- 历史遗留字段，匿名入口下恒为 null
-display_name text not null  -- 全局唯一（lower(display_name) unique index）
+email text unique  -- 历史遗留字段，恒为 null（真实邮箱在 auth.users）
+display_name text not null  -- 显示名，可重复（无唯一索引），首次默认取邮箱 @ 前缀
 display_color text not null default 'white'
 role text not null check (role in ('admin', 'member'))
 status text not null check (status in ('active', 'disabled'))
@@ -173,8 +174,9 @@ updated_at timestamptz not null default now()
 访问规则：
 
 1. 用户可读取同房间成员的 profile。
-2. 用户不能直接写 profiles 表，激活和改名走 `start_profile` RPC，改颜色走 `update_profile_color` RPC。
-3. 第一个激活的 profile 成为 admin，其余用户必须携带有效邀请码激活。
+2. 用户不能直接写 profiles 表：登录后建档走 `ensure_profile(invite_code)` RPC，
+   改显示名走 `set_display_name` RPC，改颜色走 `update_profile_color` RPC。
+3. 第一个建立的 profile 成为 admin，其余用户必须携带有效邀请码注册。
 
 ### 5.1b invite_codes
 
@@ -189,17 +191,16 @@ created_by uuid not null references auth.users(id)
 used_by uuid references auth.users(id)
 used_at timestamptz
 expires_at timestamptz not null default now() + interval '30 days'
-room_id uuid references rooms(id) on delete cascade  -- 房间码；null 为全局码
+room_id uuid references rooms(id) on delete cascade  -- 历史字段，新码恒为 null
 created_at timestamptz not null default now()
 ```
 
 访问规则：
 
 1. 启用 RLS 且不创建 policy，客户端不能直接读写。
-2. 生成走 `create_invite_code(target_room_id default null)` RPC：全局码仅
-   admin；房间码允许房间 owner 或 admin。
-3. 消费在 `start_profile` RPC 内完成；房间码会同时把新用户插入
-   `room_members`，一步完成激活 + 进房。
+2. 生成走 `create_invite_code()` RPC：只生成全局账号注册码，仅 admin 可调。
+   （房间码已废弃；房间开放后无需把人拉进房间。）
+3. 消费在 `ensure_profile(invite_code)` RPC 内完成：校验未用且未过期，标记已用。
 4. `list_invite_codes()` 列出自己发的码（admin 可见全部），
    `revoke_invite_code(code)` 撤销未使用的码。
 
@@ -225,8 +226,10 @@ updated_at timestamptz not null default now()
 
 访问规则：
 
-1. 成员可读取房间。
+1. rooms 表 RLS 仍限成员/owner 可读（进房后才读房间内容）。
 2. owner 可更新房间名。
+3. 房间发现走 `list_rooms_with_counts()` RPC（SECURITY DEFINER）：返回所有
+   房间 + 成员数 + 当前用户是否已加入，绕过 RLS 实现"开放发现"。
 
 ### 5.3 room_members
 
@@ -245,8 +248,10 @@ primary key (room_id, user_id)
 访问规则：
 
 1. 成员可读取同房间成员列表。
-2. owner 可添加或移除 member。
-3. owner 不能移除自己，除非先转让 owner。MVP 可以不做转让。
+2. 自助加入走 `join_room(target_room_id)` RPC（SECURITY DEFINER，幂等）：任意
+   活跃用户可把自己加入任意房间，role 固定为 `member`。房间开放，无需邀请。
+3. owner 可移除 member（创建房间时 owner 通过现有 policy 把自己加为成员）。
+4. owner 不能移除自己，除非先转让 owner。MVP 可以不做转让。
 
 ### 5.4 messages
 
@@ -284,7 +289,7 @@ created_at timestamptz not null default now()
 语义说明：`sender_display_name` 和 `sender_display_color` 是发送时由
 trigger 写入的快照（IRC 风格）。用户之后改名或改色不会回写历史消息，
 这是有意决策：聊天记录保留当时的身份呈现，避免读路径 join 和实时
-payload 复杂化。`/members` 与新消息始终显示最新昵称/颜色。
+payload 复杂化。`/members` 与新消息始终显示最新显示名/颜色。
 
 ### 5.5 room_watchlist
 
@@ -636,7 +641,7 @@ TWELVE_DATA_API_KEY=<secret>
 1. 股票 provider API key 放在 Supabase function secrets。
 2. function 日志不得打印 API key 或完整 provider payload 中的敏感字段。
 3. function 内部校验调用者 JWT，并要求 `profiles.status = 'active'`。
-   未完成昵称/邀请码激活的匿名用户不能触发 provider 查询。
+   未完成 profile（未登录或未注册）的用户不能触发 provider 查询。
 4. 不做 per-symbol 的 watchlist 归属校验：`/stock <symbol>` 允许查询
    任意 symbol，已激活用户都是受信的小群体成员。报价本身不是私密数据，
    这里防护的是 provider 配额滥用。
@@ -825,14 +830,14 @@ pnpm test
 11. 实现按需刷新，并把 Cron 作为可选缓存预刷新和孤儿缓存清理。
 12. 补齐测试和端到端验收脚本。
 
-当前实现状态（2026-06-10）：
+当前实现状态（2026-06-15）：
 
 1. 已完成 Node.js TypeScript 项目骨架、环境变量解析、命令解析、canonical symbol、quote cache policy。
-2. 已完成 Supabase migration、RLS policy、清理函数、昵称 + 邀请码激活（Anonymous Auth + `start_profile` RPC）。
-3. 已完成 Supabase repository helper、`get-stock-quotes` Edge Function（含 JWT 与 active profile 校验、force 节流、失败退避）、Twelve Data adapter 和当前报价缓存。
-4. 已完成 Ink terminal UI（顶部 info panel 布局）、消息历史、Realtime postgres_changes 实时收发（消息、watchlist、quote，方案 A）、本地 session 持久化和 `--profile` 多账号。
-5. 已完成 profile 颜色（`/color` 系列命令、彩色成员列表和消息昵称）。
-6. 已完成房间码邀请（`create_invite_code(room_id)`、`/invite-code list|revoke`）、`/logout confirm` 二次确认、消息频率限制 trigger、孤儿匿名用户清理函数。
+2. 已完成 Supabase migration、RLS policy、清理函数、邮箱 OTP 登录（email OTP + `ensure_profile` RPC），显示名与身份解耦、可改（`set_display_name`，`/name`）。
+3. 已完成 `get-stock-quotes` Edge Function（含 JWT 与 active profile 校验、force 节流、失败退避）、Twelve Data adapter 和当前报价缓存。
+4. 已完成 Ink terminal UI（顶部 info panel 布局）、消息历史、Realtime postgres_changes 实时收发（消息、watchlist、quote，方案 A）、本地 session 持久化和 `--profile` 多账号（外加 `scripts/dev-login.mjs` / `pnpm dev:tmux` 免 OTP 本地多账号测试）。
+5. 已完成 profile 颜色（`/color` 系列命令、彩色成员列表和消息显示名）。
+6. 已完成开放房间：`list_rooms_with_counts()` 发现、`join_room()` 自助加入；邀请码改为只发全局账号注册码（`create_invite_code()`、`/invite-code list|revoke`，已移除 `/invite` 和房间码）；`/logout confirm` 二次确认、消息频率限制 trigger。
 7. 尚未实现：Presence 在线状态和 typing（§7.2）、`refresh-stock-quotes` Edge Function（§9.2）、Supabase Cron 调度（§10，清理函数已存在但无调度）、消息内 `$SYMBOL` 识别、`/stock` 详情视图（目前只展示价格和涨跌幅摘要）、消息区回滚/翻页（§11 已知限制）。
 8. Broadcast-first（方案 B）尚未启动，`realtime.ts` 中的 messages/presence topic helper 为该升级预留。
 

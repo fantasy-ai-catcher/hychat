@@ -4,11 +4,11 @@ export type ParsedChatInput =
   | { type: 'error'; message: string }
   | StartCommand
   | VerifyCommand
+  | NameCommand
   | LogoutCommand
   | RoomsCommand
   | CreateRoomCommand
   | JoinCommand
-  | InviteCommand
   | InviteCodeCommand
   | InviteCodeListCommand
   | InviteCodeRevokeCommand
@@ -27,15 +27,14 @@ type StartCommand = {
   type: 'command';
   name: 'start';
   email?: string;
-  displayName?: string;
   inviteCode?: string;
 };
 type VerifyCommand = { type: 'command'; name: 'verify'; code: string };
+type NameCommand = { type: 'command'; name: 'name'; displayName: string };
 type LogoutCommand = { type: 'command'; name: 'logout'; confirmed?: boolean };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
 type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
 type JoinCommand = { type: 'command'; name: 'join'; room: string };
-type InviteCommand = { type: 'command'; name: 'invite'; displayName: string };
 type InviteCodeCommand = { type: 'command'; name: 'invite-code' };
 type InviteCodeListCommand = { type: 'command'; name: 'invite-code-list' };
 type InviteCodeRevokeCommand = { type: 'command'; name: 'invite-code-revoke'; code: string };
@@ -72,6 +71,13 @@ export function parseChatInput(input: string): ParsedChatInput {
         name: 'verify',
         code
       }));
+    case '/name':
+    case '/nick':
+      return requireRest(args, 'Usage: /name <new name>', (displayName) => ({
+        type: 'command',
+        name: 'name',
+        displayName
+      }));
     case '/logout':
       return args[0] === 'confirm'
         ? { type: 'command', name: 'logout', confirmed: true }
@@ -98,12 +104,6 @@ export function parseChatInput(input: string): ParsedChatInput {
         name: 'create-room',
         nameText
       }));
-    case '/invite':
-      return requireArgument(args[0], 'Usage: /invite <nickname>', (displayName) => ({
-        type: 'command',
-        name: 'invite',
-        displayName
-      }));
     case '/watch':
       return parseWatchCommand(args);
     case '/stock':
@@ -123,8 +123,7 @@ export function parseChatInput(input: string): ParsedChatInput {
   }
 }
 
-const startUsage =
-  'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).';
+const startUsage = 'Usage: /start <email> [invite-code].';
 
 function parseStartCommand(args: string[]): StartCommand | { type: 'error'; message: string } {
   if (args.length === 0) {
@@ -134,7 +133,7 @@ function parseStartCommand(args: string[]): StartCommand | { type: 'error'; mess
   const emails = args.filter((arg) => arg.includes('@'));
   const rest = args.filter((arg) => !arg.includes('@'));
 
-  if (emails.length !== 1 || rest.length > 2 || args.length > 3) {
+  if (emails.length !== 1 || rest.length > 1) {
     return { type: 'error', message: startUsage };
   }
 
@@ -142,8 +141,7 @@ function parseStartCommand(args: string[]): StartCommand | { type: 'error'; mess
     type: 'command',
     name: 'start',
     email: emails[0],
-    displayName: rest[0],
-    inviteCode: rest[1]
+    inviteCode: rest[0]
   };
 }
 

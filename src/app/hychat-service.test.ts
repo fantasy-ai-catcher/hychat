@@ -112,11 +112,36 @@ function createMockSupabase() {
       },
       rpc(name: string, args: unknown) {
         calls.push({ method: 'rpc', args: [name, args] });
-        if (name === 'start_profile') {
+        if (name === 'ensure_profile') {
           return Promise.resolve({ data: [profile], error: null });
+        }
+        if (name === 'set_display_name') {
+          return Promise.resolve({
+            data: [
+              { ...profile, display_name: (args as { target_display_name: string }).target_display_name }
+            ],
+            error: null
+          });
         }
         if (name === 'create_invite_code') {
           return Promise.resolve({ data: 'invite123', error: null });
+        }
+        if (name === 'join_room') {
+          return Promise.resolve({ data: null, error: null });
+        }
+        if (name === 'list_rooms_with_counts') {
+          return Promise.resolve({
+            data: [
+              {
+                id: 'room-1',
+                name: 'Friends',
+                owner_id: 'user-1',
+                member_count: 3,
+                is_member: true
+              }
+            ],
+            error: null
+          });
         }
         if (name === 'list_invite_codes') {
           return Promise.resolve({
@@ -203,11 +228,11 @@ describe('createHychatService', () => {
     );
   });
 
-  it('starts a profile through the invite-aware RPC', async () => {
+  it('ensures a profile through the invite-aware RPC', async () => {
     const { supabase, calls } = createMockSupabase();
     const service = createHychatService(supabase);
 
-    await expect(service.startProfile('liudong', 'invite123')).resolves.toEqual({
+    await expect(service.ensureProfile('invite123')).resolves.toEqual({
       id: 'user-1',
       displayName: 'liudong',
       displayColor: 'white',
@@ -219,14 +244,33 @@ describe('createHychatService', () => {
       expect.arrayContaining([
         {
           method: 'rpc',
-          args: [
-            'start_profile',
-            { target_display_name: 'liudong', invite_code: 'invite123' }
-          ]
+          args: ['ensure_profile', { invite_code: 'invite123' }]
         }
       ])
     );
     expect(calls.some((call) => call.method === 'signInWithOtp')).toBe(false);
+  });
+
+  it('changes the display name through RPC', async () => {
+    const { supabase, calls } = createMockSupabase();
+    const service = createHychatService(supabase);
+
+    await expect(service.setDisplayName('Cool Cat')).resolves.toEqual({
+      id: 'user-1',
+      displayName: 'Cool Cat',
+      displayColor: 'white',
+      role: 'admin',
+      status: 'active'
+    });
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        {
+          method: 'rpc',
+          args: ['set_display_name', { target_display_name: 'Cool Cat' }]
+        }
+      ])
+    );
   });
 
   it('updates the current profile color through RPC', async () => {
@@ -271,37 +315,31 @@ describe('createHychatService', () => {
     );
   });
 
-  it('creates invite codes, invites by nickname, and invokes the quote function', async () => {
+  it('creates a global invite code, lists rooms with counts, self-joins, and invokes the quote function', async () => {
     const { supabase, calls } = createMockSupabase();
     const service = createHychatService(supabase);
 
     await service.createInviteCode();
-    await service.createInviteCode('room-1');
-    await service.inviteMember('room-1', 'alice');
+    const rooms = await service.listRoomsWithCounts();
+    await service.joinRoom('room-1');
     await service.getQuotes(['AAPL.US'], false);
 
+    expect(rooms).toEqual([
+      { id: 'room-1', name: 'Friends', owner_id: 'user-1', member_count: 3, is_member: true }
+    ]);
     expect(calls).toEqual(
       expect.arrayContaining([
         {
           method: 'rpc',
-          args: [
-            'create_invite_code',
-            { target_room_id: null }
-          ]
+          args: ['create_invite_code', {}]
         },
         {
           method: 'rpc',
-          args: [
-            'create_invite_code',
-            { target_room_id: 'room-1' }
-          ]
+          args: ['list_rooms_with_counts', {}]
         },
         {
           method: 'rpc',
-          args: [
-            'invite_room_member_by_display_name',
-            { target_room_id: 'room-1', target_display_name: 'alice' }
-          ]
+          args: ['join_room', { target_room_id: 'room-1' }]
         },
         {
           method: 'invoke',

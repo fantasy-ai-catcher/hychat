@@ -194,8 +194,8 @@ describe('buildWelcomeLines', () => {
     const text = lines.join('\n');
 
     expect(lines[0]).toBe('Get started:');
-    expect(text).toContain('/start <nickname> <email> [invite-code]');
-    expect(text).toContain('/verify <code>');
+    expect(text).toContain('/start <email> [invite-code]');
+    expect(text).toContain('/verify <code or pasted link>');
     expect(text).toContain('/join <room>');
     expect(text).toContain('/help');
     expect(text).not.toContain('undefined');

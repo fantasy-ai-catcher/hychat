@@ -61,7 +61,16 @@ describe('App', () => {
       async getAuthEmail() {
         return null;
       },
-      async startProfile() {
+      async ensureProfile() {
+        return {
+          id: 'user-1',
+          displayName: 'liudong',
+          displayColor: 'white',
+          role: 'admin' as const,
+          status: 'active' as const
+        };
+      },
+      async setDisplayName() {
         return {
           id: 'user-1',
           displayName: 'liudong',
@@ -83,13 +92,13 @@ describe('App', () => {
       async createInviteCode() {
         return 'invite123';
       },
-      async listRooms() {
+      async listRoomsWithCounts() {
         return [];
       },
       async createRoom() {
         return { id: 'room-1', name: 'Friends' };
       },
-      async inviteMember() {},
+      async joinRoom() {},
       async listRecentMessages() {
         return [];
       },
@@ -150,8 +159,8 @@ describe('App', () => {
     const text = collectText(shell);
 
     expect(text).toContain('Get started:');
-    expect(text).toContain('/start <nickname> <email> [invite-code]');
-    expect(text).toContain('/verify <code>');
+    expect(text).toContain('/start <email> [invite-code]');
+    expect(text).toContain('/verify <code or pasted link>');
     expect(text).toContain('/help');
     expect(text).not.toContain('Members:');
     expect(text).not.toContain('Stocks:');

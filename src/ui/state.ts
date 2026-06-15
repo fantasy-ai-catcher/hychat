@@ -1,6 +1,8 @@
 export type RoomSummary = {
   id: string;
   name: string;
+  memberCount?: number;
+  isMember?: boolean;
 };
 
 export type ChatMessage = {
@@ -71,12 +73,12 @@ export function buildWelcomeLines(userDisplayName?: string): string[] {
   if (userDisplayName === undefined) {
     return [
       'Get started:',
-      '  1. /start <nickname> <email> [invite-code]   register',
-      '  2. /verify <code or pasted link>             from the email you get',
-      '  3. /create <room name> or /join <room>       chat',
+      '  1. /start <email> [invite-code]        log in or register',
+      '  2. /verify <code or pasted link>       from the email you get',
+      '  3. /create <room name> or /join <room> chat',
       '',
-      'Returning? /start <email> then /verify <code>.',
-      'Type /help for all commands.'
+      'New here? You need an invite code from a friend.',
+      'Change your name any time with /name <new name>. Type /help for all commands.'
     ];
   }
 

@@ -11,9 +11,9 @@ Implemented MVP:
 3. Interactive Ink terminal UI with slash commands.
 4. Canonical stock symbols such as `AAPL.US`, `0700.HK`, `600519.CN`.
 5. Supabase schema migration with RLS and explicit Data API grants.
-6. Supabase anonymous Auth with nickname profiles, invite codes, and local session persistence.
+6. Supabase email-OTP Auth with invite codes and local session persistence. Your identity is your email; your display name is a separate, changeable label.
 7. Stock quote Edge Function with current quote cache and Twelve Data adapter.
-8. Room creation, room join, nickname invite, member listing, message history, and realtime message/watchlist updates.
+8. Open rooms: create rooms, discover all rooms with member counts, self-join any room, member listing, message history, and realtime message/watchlist updates.
 9. Shared room watchlist and manual quote refresh.
 
 ## Requirements
@@ -57,30 +57,41 @@ pnpm build
 pnpm dev
 ```
 
-For local multi-user testing, run separate terminals with named local session
-profiles:
+### Local multi-account testing
+
+Each `--profile <name>` keeps its own session file under
+`~/.hychat/sessions/<name>/`, so you can run several accounts at once:
 
 ```bash
-hychat --profile liudong
-hychat --profile test
+hychat --profile alice
+hychat --profile bob
 ```
 
-If the named local profile has no saved session yet, HyChat automatically starts
-or activates that Supabase user with the profile name as the nickname. When the
-default `hychat` session is signed in as an admin, HyChat uses it to generate the
-invite code needed for the new local profile. The default `hychat` command still
-uses the single machine session at `~/.hychat/session.json` and requires explicit
-`/start` the first time.
+To skip the email/OTP dance entirely, pre-log-in test accounts with the
+service-role key (read from `SUPABASE_SERVICE_ROLE_KEY`, or fetched via the
+linked Supabase CLI). This creates confirmed `<name>@hychat.test` users, gives
+each a profile, and writes a ready session into the profile file:
+
+```bash
+pnpm dev:login            # sets up alice and bob
+pnpm dev:login carol dave # or name your own
+pnpm dev --profile alice  # launches already signed in
+```
+
+`pnpm dev:tmux` does both at once: pre-logs-in alice and bob and opens a tmux
+session with the two clients side by side (Ctrl-b ← / → to switch panes,
+Ctrl-b z to zoom, Ctrl-b d to detach, `tmux attach` to return).
 
 ## Terminal Commands
 
 ```text
-/start [nickname] [invite-code]
+/start <email> [invite-code]
+/verify <code or pasted link>
+/name <new name>
 /logout confirm
 /create <room name>
 /rooms
-/join <room id|room name>
-/invite <nickname>
+/join <number|room id|room name>
 /invite-code
 /invite-code list
 /invite-code revoke <code>
@@ -96,11 +107,27 @@ uses the single machine session at `~/.hychat/session.json` and requires explici
 /quit
 ```
 
-The first activated profile becomes the admin. Run `/start` to use the default local username, or `/start <nickname>`.
+Log in or register with `/start <email>`; a brand-new account needs an invite
+code (`/start <email> <invite-code>`). HyChat emails you a code or link — finish
+with `/verify <code or pasted link>`. The very first account ever created
+becomes the admin. Your display name defaults to the part of your email before
+`@`; change it any time with `/name <new name>`. Display names are just labels —
+they do not have to be unique and are never tied to your login.
 
-Invite codes come in two flavors. Running `/invite-code` inside a room (as the room owner or admin) creates a room-bound code: a friend activating with `/start <nickname> <code>` joins that room in the same step. Running it outside a room creates a global activation code (admin only). Use `/invite-code list` and `/invite-code revoke <code>` to manage codes you issued.
+Rooms are open to everyone in the circle: `/rooms` lists every room with its
+member count (and marks the ones you are in), and `/join <number|name>` joins
+any of them — no invitation needed. There is no "invite someone into a room"
+step.
 
-Accounts are anonymous Supabase users: the local session file is the only credential. `/logout` warns and requires `/logout confirm` because a logged-out anonymous account cannot be recovered.
+Invite codes are only for account registration. `/invite-code` (admin only)
+creates a global code you hand to a new friend so they can `/start <email>
+<code>`; once in, they pick rooms themselves. Use `/invite-code list` and
+`/invite-code revoke <code>` to manage codes you issued.
+
+Your identity is your email login; the local session file at
+`~/.hychat/session.json` (or `~/.hychat/sessions/<profile>/session.json`) caches
+it. `/logout` warns and requires `/logout confirm`; log back in any time with
+`/start <email>`.
 
 Use `/members` inside a room to list every member with their role and selected profile color.
 
@@ -121,6 +148,9 @@ supabase/migrations/20260610190000_harden_access_and_cleanup.sql
 supabase/migrations/20260610191500_minimum_data_api_grants.sql
 supabase/migrations/20260610192500_restrict_function_execute.sql
 supabase/migrations/20260610200000_room_invites_and_quota_guards.sql
+supabase/migrations/20260611110000_email_otp_identity.sql
+supabase/migrations/20260615120000_decouple_display_name.sql
+supabase/migrations/20260615130000_open_rooms.sql
 ```
 
 It creates:
@@ -133,7 +163,7 @@ It creates:
 6. `stock_quotes`
 7. `invite_codes`
 
-All public app tables enable RLS. Tables exposed through the Data API include explicit `GRANT` statements for `authenticated`. Private membership and profile helper functions live in the non-exposed `private` schema to avoid RLS recursion in policies. Anonymous Auth users cannot create rooms or send messages until their `profiles.status` is `active`.
+All public app tables enable RLS. Tables exposed through the Data API include explicit `GRANT` statements for `authenticated`. Private membership and profile helper functions live in the non-exposed `private` schema to avoid RLS recursion in policies. A logged-in user cannot create rooms or send messages until their `profiles.status` is `active`.
 
 ## Stock Quotes
 

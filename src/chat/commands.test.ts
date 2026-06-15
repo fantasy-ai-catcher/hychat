@@ -31,34 +31,39 @@ describe('parseChatInput', () => {
       name: 'start',
       email: 'ld@example.com'
     });
-    expect(parseChatInput('/start liudong ld@example.com')).toEqual({
+    expect(parseChatInput('/start ld@example.com invite123')).toEqual({
       type: 'command',
       name: 'start',
       email: 'ld@example.com',
-      displayName: 'liudong'
-    });
-    expect(parseChatInput('/start liudong ld@example.com invite123')).toEqual({
-      type: 'command',
-      name: 'start',
-      email: 'ld@example.com',
-      displayName: 'liudong',
       inviteCode: 'invite123'
     });
-    expect(parseChatInput('/start ld@example.com liudong')).toEqual({
+    expect(parseChatInput('/start invite123 ld@example.com')).toEqual({
       type: 'command',
       name: 'start',
       email: 'ld@example.com',
-      displayName: 'liudong'
+      inviteCode: 'invite123'
     });
     expect(parseChatInput('/start liudong')).toEqual({
       type: 'error',
-      message:
-        'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).'
+      message: 'Usage: /start <email> [invite-code].'
     });
     expect(parseChatInput('/start a@b.c d@e.f')).toEqual({
       type: 'error',
-      message:
-        'Usage: /start <email> (returning) or /start <nickname> <email> [invite-code] (new).'
+      message: 'Usage: /start <email> [invite-code].'
+    });
+    expect(parseChatInput('/name Cool Cat')).toEqual({
+      type: 'command',
+      name: 'name',
+      displayName: 'Cool Cat'
+    });
+    expect(parseChatInput('/nick Cool Cat')).toEqual({
+      type: 'command',
+      name: 'name',
+      displayName: 'Cool Cat'
+    });
+    expect(parseChatInput('/name')).toEqual({
+      type: 'error',
+      message: 'Usage: /name <new name>'
     });
     expect(parseChatInput('/verify 482913')).toEqual({
       type: 'command',
@@ -105,14 +110,6 @@ describe('parseChatInput', () => {
       type: 'command',
       name: 'create-room',
       nameText: 'Friends Room'
-    });
-  });
-
-  it('parses invite commands', () => {
-    expect(parseChatInput('/invite alice')).toEqual({
-      type: 'command',
-      name: 'invite',
-      displayName: 'alice'
     });
   });
 
