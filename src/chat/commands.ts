@@ -9,6 +9,7 @@ export type ParsedChatInput =
   | RoomsCommand
   | CreateRoomCommand
   | JoinCommand
+  | LeaveCommand
   | InviteCodeCommand
   | InviteCodeListCommand
   | InviteCodeRevokeCommand
@@ -35,6 +36,7 @@ type LogoutCommand = { type: 'command'; name: 'logout'; confirmed?: boolean };
 type RoomsCommand = { type: 'command'; name: 'rooms' };
 type CreateRoomCommand = { type: 'command'; name: 'create-room'; nameText: string };
 type JoinCommand = { type: 'command'; name: 'join'; room: string };
+type LeaveCommand = { type: 'command'; name: 'leave' };
 type InviteCodeCommand = { type: 'command'; name: 'invite-code' };
 type InviteCodeListCommand = { type: 'command'; name: 'invite-code-list' };
 type InviteCodeRevokeCommand = { type: 'command'; name: 'invite-code-revoke'; code: string };
@@ -98,6 +100,8 @@ export function parseChatInput(input: string): ParsedChatInput {
         name: 'join',
         room
       }));
+    case '/leave':
+      return { type: 'command', name: 'leave' };
     case '/create':
       return requireRest(args, 'Usage: /create <room name>', (nameText) => ({
         type: 'command',

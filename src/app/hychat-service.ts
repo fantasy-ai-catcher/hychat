@@ -223,6 +223,11 @@ export function createHychatService(supabase: SupabaseLikeClient) {
       await ensureData(result);
     },
 
+    async leaveRoom(roomId: string): Promise<void> {
+      const result = await supabase.rpc('leave_room', { target_room_id: roomId });
+      await ensureData(result);
+    },
+
     async createRoom(name: string, userId: string): Promise<RoomSummary> {
       const created = await supabase
         .from('rooms')

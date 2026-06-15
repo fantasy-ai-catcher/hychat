@@ -22,6 +22,7 @@ describe('parseChatInput', () => {
       room: 'room-1'
     });
     expect(parseChatInput('/members')).toEqual({ type: 'command', name: 'members' });
+    expect(parseChatInput('/leave')).toEqual({ type: 'command', name: 'leave' });
   });
 
   it('parses account and help commands', () => {

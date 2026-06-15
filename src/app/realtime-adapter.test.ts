@@ -21,7 +21,10 @@ describe('createRealtimeAdapter', () => {
       onWatchlistChange: vi.fn()
     });
 
-    expect(client.channel).toHaveBeenCalledWith('room:room-1:updates');
+    expect(client.channel).toHaveBeenCalledWith(
+      'room:room-1:updates',
+      expect.objectContaining({ config: expect.anything() })
+    );
     subscription.unsubscribe();
     expect(channel.unsubscribe).toHaveBeenCalledOnce();
   });

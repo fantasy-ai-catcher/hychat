@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildWelcomeLines, createInitialAppState, reducer, resolveShellView } from './state.js';
+import {
+  buildWelcomeLines,
+  computeMemberStatuses,
+  createInitialAppState,
+  reducer,
+  resolveShellView
+} from './state.js';
 
 describe('UI state reducer', () => {
   it('loads rooms and joins a room', () => {
@@ -14,6 +20,37 @@ describe('UI state reducer', () => {
     expect(reducer(state, { type: 'room-joined', roomId: 'room-1' }).activeRoomId).toBe(
       'room-1'
     );
+  });
+
+  it('tracks presence and clears room-scoped state on leave', () => {
+    let state = reducer(createInitialAppState(), { type: 'room-joined', roomId: 'room-1' });
+    state = reducer(state, {
+      type: 'presence-synced',
+      roomId: 'room-1',
+      userIds: ['user-1', 'user-2']
+    });
+    state = reducer(state, { type: 'typing-started', roomId: 'room-1', userId: 'user-2' });
+
+    expect(state.onlineByRoom['room-1']).toEqual(['user-1', 'user-2']);
+    expect(state.typingByRoom['room-1']).toEqual(['user-2']);
+
+    const left = reducer(state, { type: 'room-left', roomId: 'room-1' });
+    expect(left.activeRoomId).toBeUndefined();
+    expect(left.onlineByRoom['room-1']).toBeUndefined();
+    expect(left.typingByRoom['room-1']).toBeUndefined();
+  });
+
+  it('adds and removes typing users without duplicates', () => {
+    let state = reducer(createInitialAppState(), {
+      type: 'typing-started',
+      roomId: 'room-1',
+      userId: 'user-2'
+    });
+    state = reducer(state, { type: 'typing-started', roomId: 'room-1', userId: 'user-2' });
+    expect(state.typingByRoom['room-1']).toEqual(['user-2']);
+
+    state = reducer(state, { type: 'typing-stopped', roomId: 'room-1', userId: 'user-2' });
+    expect(state.typingByRoom['room-1']).toEqual([]);
   });
 
   it('appends received messages per room', () => {
@@ -211,5 +248,27 @@ describe('buildWelcomeLines', () => {
     expect(text).toContain('/create <room name>');
     expect(text).toContain('/join <room>');
     expect(text).toContain('/help');
+  });
+});
+
+describe('computeMemberStatuses', () => {
+  const members = [
+    { roomId: 'room-1', userId: 'user-1', displayName: 'alice', role: 'owner' as const },
+    { roomId: 'room-1', userId: 'user-2', displayName: 'bob', role: 'member' as const }
+  ];
+
+  it('marks members in the presence set online and the rest offline', () => {
+    const result = computeMemberStatuses(members, ['user-1'], []);
+    expect(result.map((m) => [m.userId, m.status])).toEqual([
+      ['user-1', 'online'],
+      ['user-2', 'offline']
+    ]);
+  });
+
+  it('only shows typing for an online member', () => {
+    const result = computeMemberStatuses(members, ['user-1'], ['user-1', 'user-2']);
+    expect(result.find((m) => m.userId === 'user-1')?.typing).toBe(true);
+    // user-2 is typing in the set but offline, so it must not surface.
+    expect(result.find((m) => m.userId === 'user-2')?.typing).toBe(false);
   });
 });

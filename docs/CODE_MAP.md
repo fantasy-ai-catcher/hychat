@@ -18,24 +18,26 @@ src/
 │   └── env.ts                runtime env schema / validation (zod)
 ├── chat/
 │   └── commands.ts           [L1] slash-command parsing → typed ParsedChatInput
-│                             (/start /verify /name /join /rooms /invite-code /watch /stock /color …)
+│                             (/start /verify /name /join /leave /rooms /invite-code /watch /stock /color …)
 ├── app/
 │   ├── chat-session.ts       [L1] session orchestration: login/verify flow, command
 │   │                         handling, pending-status + help text, service interface
 │   ├── hychat-service.ts     [L3] all Supabase calls: auth/OTP, ensureProfile/setDisplayName,
-│   │                         rooms (listRoomsWithCounts/createRoom/joinRoom), messages,
+│   │                         rooms (listRoomsWithCounts/createRoom/joinRoom/leaveRoom), messages,
 │   │                         members, invite codes, quotes
 │   ├── session-storage.ts    local session file persistence + --profile paths
 │   ├── profile-colors.ts     [L1] color palette + helpers
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
 ├── ui/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText
-│   ├── state.ts              [L1] UI state types, reducer, welcome lines
+│   ├── state.ts              [L1] UI state types, reducer, welcome lines,
+│   │                         computeMemberStatuses (online/offline + typing projection)
 │   └── loading-animation.ts  [L1] spinner frames + busy-elapsed timer
 ├── supabase/
 │   ├── client.ts             Supabase client factory
 │   └── realtime.ts           realtime topic helpers + subscribeToRoomRealtime
-│                             (postgres_changes for messages / watchlist / members / quotes)
+│                             (postgres_changes for messages / watchlist / members / quotes;
+│                             presence for online members + broadcast for typing)
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN)
     ├── cache.ts              [L1] quote cache TTL policy

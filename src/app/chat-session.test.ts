@@ -86,6 +86,9 @@ function createService() {
       async joinRoom(roomId: string) {
         calls.push({ method: 'joinRoom', args: [roomId] });
       },
+      async leaveRoom(roomId: string) {
+        calls.push({ method: 'leaveRoom', args: [roomId] });
+      },
       async listMembers(roomId: string) {
         calls.push({ method: 'listMembers', args: [roomId] });
         return [
@@ -646,6 +649,105 @@ describe('createChatSession', () => {
         })
       })
     );
+  });
+
+  it('leaves the active room, unsubscribes, and returns to the room list', async () => {
+    const { service, calls } = createService();
+    const unsubscribe = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn(() => ({ unsubscribe }))
+    };
+    const session = createChatSession({ service, realtime });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    const snapshot = await session.handleLine('/leave');
+
+    expect(calls.some((c) => c.method === 'leaveRoom' && c.args[0] === 'room-1')).toBe(true);
+    expect(unsubscribe).toHaveBeenCalled();
+    expect(snapshot.state.activeRoomId).toBeUndefined();
+    expect(snapshot.statusText).toContain('Left');
+  });
+
+  it('applies realtime presence to the online member set', async () => {
+    const { service } = createService();
+    let presenceHandler: ((userIds: string[]) => void) | undefined;
+    const onSnapshotChange = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        presenceHandler = handlers.onPresenceChange;
+        return { unsubscribe: vi.fn() };
+      })
+    };
+    const session = createChatSession({ service, realtime, onSnapshotChange });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    onSnapshotChange.mockClear();
+
+    presenceHandler?.(['user-1', 'user-2']);
+
+    expect(onSnapshotChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          onlineByRoom: expect.objectContaining({ 'room-1': ['user-1', 'user-2'] })
+        })
+      })
+    );
+  });
+
+  it('marks a remote user typing and clears it when their message arrives', async () => {
+    const { service } = createService();
+    let typingHandler: ((userId: string) => void) | undefined;
+    let messageHandler: ((message: { id: string; room_id: string; sender_id: string; kind: 'text'; body: string; created_at: string }) => void) | undefined;
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        typingHandler = handlers.onTyping;
+        messageHandler = handlers.onMessage;
+        return { unsubscribe: vi.fn() };
+      })
+    };
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({
+      service,
+      realtime,
+      onSnapshotChange: (snapshot) => {
+        latest = snapshot;
+      }
+    });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    typingHandler?.('user-2');
+    expect(latest?.state.typingByRoom['room-1']).toEqual(['user-2']);
+
+    messageHandler?.({
+      id: 'm-1',
+      room_id: 'room-1',
+      sender_id: 'user-2',
+      kind: 'text',
+      body: 'hi',
+      created_at: '2026-06-06T08:05:00.000Z'
+    });
+    expect(latest?.state.typingByRoom['room-1']).toEqual([]);
+  });
+
+  it('throttles outgoing typing broadcasts', async () => {
+    const { service } = createService();
+    const sendTyping = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn(() => ({ unsubscribe: vi.fn(), sendTyping }))
+    };
+    const session = createChatSession({ service, realtime });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    session.notifyTyping();
+    session.notifyTyping();
+
+    expect(sendTyping).toHaveBeenCalledTimes(1);
   });
 
   it('applies realtime quote updates to the visible quote map', async () => {

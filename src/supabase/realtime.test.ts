@@ -29,7 +29,10 @@ describe('room realtime subscriptions', () => {
       onWatchlistChange: vi.fn()
     });
 
-    expect(client.channel).toHaveBeenCalledWith('room:room-1:updates');
+    expect(client.channel).toHaveBeenCalledWith(
+      'room:room-1:updates',
+      expect.objectContaining({ config: expect.anything() })
+    );
     expect(calls).toEqual([
       {
         event: 'postgres_changes',
@@ -65,6 +68,14 @@ describe('room realtime subscriptions', () => {
           schema: 'public',
           table: 'stock_quotes'
         }
+      },
+      {
+        event: 'presence',
+        filter: { event: 'sync' }
+      },
+      {
+        event: 'broadcast',
+        filter: { event: 'typing' }
       }
     ]);
     expect(subscribe).toHaveBeenCalledOnce();
@@ -113,5 +124,83 @@ describe('room realtime subscriptions', () => {
       price: 222.5,
       change_percent: 2.1
     });
+  });
+
+  it('tracks presence and reports online user ids on sync', () => {
+    const handlers: Array<{
+      filter: Record<string, unknown>;
+      handler: (payload: unknown) => void;
+    }> = [];
+    const track = vi.fn();
+    const channel = {
+      on(_event: string, filter: Record<string, unknown>, handler: (payload: unknown) => void) {
+        handlers.push({ filter, handler });
+        return channel;
+      },
+      subscribe: vi.fn((cb: (status: string) => void) => cb('SUBSCRIBED')),
+      unsubscribe: vi.fn(),
+      track,
+      presenceState: () => ({ 'user-1': [{}], 'user-2': [{}] })
+    };
+    const onPresenceChange = vi.fn();
+
+    subscribeToRoomRealtime(
+      { channel: vi.fn(() => channel) },
+      {
+        roomId: 'room-1',
+        userId: 'user-1',
+        onMessage: vi.fn(),
+        onWatchlistChange: vi.fn(),
+        onPresenceChange
+      }
+    );
+
+    expect(track).toHaveBeenCalledWith({ user_id: 'user-1' });
+
+    const presenceEntry = handlers.find((entry) => entry.filter.event === 'sync');
+    presenceEntry?.handler(undefined);
+    expect(onPresenceChange).toHaveBeenCalledWith(['user-1', 'user-2']);
+  });
+
+  it('broadcasts and receives typing events', () => {
+    const handlers: Array<{
+      filter: Record<string, unknown>;
+      handler: (payload: { payload?: { userId?: string } }) => void;
+    }> = [];
+    const send = vi.fn();
+    const channel = {
+      on(_event: string, filter: Record<string, unknown>, handler: (payload: unknown) => void) {
+        handlers.push({ filter, handler });
+        return channel;
+      },
+      subscribe: vi.fn(),
+      unsubscribe: vi.fn(),
+      track: vi.fn(),
+      presenceState: () => ({}),
+      send
+    };
+    const onTyping = vi.fn();
+
+    const subscription = subscribeToRoomRealtime(
+      { channel: vi.fn(() => channel) },
+      {
+        roomId: 'room-1',
+        userId: 'user-1',
+        onMessage: vi.fn(),
+        onWatchlistChange: vi.fn(),
+        onTyping
+      }
+    );
+
+    subscription.sendTyping?.();
+    expect(send).toHaveBeenCalledWith({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { userId: 'user-1' }
+    });
+
+    const typingEntry = handlers.find((entry) => entry.filter.event === 'typing');
+    typingEntry?.handler({ payload: { userId: 'user-2' } });
+    expect(onTyping).toHaveBeenCalledWith('user-2');
   });
 });

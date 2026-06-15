@@ -23,6 +23,33 @@ export type RoomMemberSummary = {
   role: 'owner' | 'member';
 };
 
+// Phase 1 distinguishes connected (online) from a member who has no live
+// connection (offline). Phase 2 will split online into active (terminal tab
+// focused) vs online (unfocused).
+export type MemberStatus = 'online' | 'offline';
+
+export type MemberView = RoomMemberSummary & {
+  status: MemberStatus;
+  typing: boolean;
+};
+
+// Pure projection of the persistent member list onto live presence + typing.
+// A member present in the realtime presence set is online; everyone else is a
+// member who is currently disconnected (offline).
+export function computeMemberStatuses(
+  members: RoomMemberSummary[],
+  onlineUserIds: string[],
+  typingUserIds: string[]
+): MemberView[] {
+  const online = new Set(onlineUserIds);
+  const typing = new Set(typingUserIds);
+  return members.map((member) => ({
+    ...member,
+    status: online.has(member.userId) ? 'online' : 'offline',
+    typing: online.has(member.userId) && typing.has(member.userId)
+  }));
+}
+
 export type QuoteSummary = {
   symbol: string;
   price?: number;
@@ -37,6 +64,8 @@ export type AppState = {
   activeRoomId?: string;
   messagesByRoom: Record<string, ChatMessage[]>;
   membersByRoom: Record<string, RoomMemberSummary[]>;
+  onlineByRoom: Record<string, string[]>;
+  typingByRoom: Record<string, string[]>;
   watchlistByRoom: Record<string, string[]>;
   quotesBySymbol: Record<string, QuoteSummary>;
   connectionStatus: ConnectionStatus;
@@ -45,8 +74,12 @@ export type AppState = {
 export type AppAction =
   | { type: 'rooms-loaded'; rooms: RoomSummary[] }
   | { type: 'room-joined'; roomId: string }
+  | { type: 'room-left'; roomId: string }
   | { type: 'messages-loaded'; roomId: string; messages: ChatMessage[] }
   | { type: 'members-loaded'; roomId: string; members: RoomMemberSummary[] }
+  | { type: 'presence-synced'; roomId: string; userIds: string[] }
+  | { type: 'typing-started'; roomId: string; userId: string }
+  | { type: 'typing-stopped'; roomId: string; userId: string }
   | { type: 'message-received'; message: ChatMessage }
   | { type: 'watchlist-updated'; roomId: string; symbols: string[] }
   | { type: 'quotes-updated'; quotes: QuoteSummary[] }
@@ -57,6 +90,8 @@ export function createInitialAppState(): AppState {
     rooms: [],
     messagesByRoom: {},
     membersByRoom: {},
+    onlineByRoom: {},
+    typingByRoom: {},
     watchlistByRoom: {},
     quotesBySymbol: {},
     connectionStatus: 'idle'
@@ -98,6 +133,16 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, rooms: action.rooms };
     case 'room-joined':
       return { ...state, activeRoomId: action.roomId };
+    case 'room-left': {
+      const { [action.roomId]: _online, ...onlineByRoom } = state.onlineByRoom;
+      const { [action.roomId]: _typing, ...typingByRoom } = state.typingByRoom;
+      return {
+        ...state,
+        activeRoomId: state.activeRoomId === action.roomId ? undefined : state.activeRoomId,
+        onlineByRoom,
+        typingByRoom
+      };
+    }
     case 'messages-loaded':
       return {
         ...state,
@@ -114,6 +159,40 @@ export function reducer(state: AppState, action: AppAction): AppState {
           [action.roomId]: action.members
         }
       };
+    case 'presence-synced':
+      return {
+        ...state,
+        onlineByRoom: {
+          ...state.onlineByRoom,
+          [action.roomId]: action.userIds
+        }
+      };
+    case 'typing-started': {
+      const current = state.typingByRoom[action.roomId] ?? [];
+      if (current.includes(action.userId)) {
+        return state;
+      }
+      return {
+        ...state,
+        typingByRoom: {
+          ...state.typingByRoom,
+          [action.roomId]: [...current, action.userId]
+        }
+      };
+    }
+    case 'typing-stopped': {
+      const current = state.typingByRoom[action.roomId] ?? [];
+      if (!current.includes(action.userId)) {
+        return state;
+      }
+      return {
+        ...state,
+        typingByRoom: {
+          ...state.typingByRoom,
+          [action.roomId]: current.filter((id) => id !== action.userId)
+        }
+      };
+    }
     case 'message-received':
       if (
         (state.messagesByRoom[action.message.roomId] ?? []).some(

@@ -52,25 +52,42 @@ type StockQuoteChange = {
   updated_at?: string;
 };
 
+type ChannelOptions = { config: { presence: { key: string } } };
+
 type SupabaseRealtimeClient = {
-  channel: (topic: string) => any;
+  channel: (topic: string, opts?: ChannelOptions) => any;
 };
 
 export type RoomRealtimeOptions = {
   roomId: string;
+  // Identifies this client for presence + typing. When omitted (e.g. in unit
+  // tests) presence is not tracked and typing is a no-op.
+  userId?: string;
   onMessage: (message: RoomMessageChange) => void;
   onWatchlistChange: (change: WatchlistChange) => void;
   onMembersChange?: (change: MemberChange) => void;
+  onPresenceChange?: (onlineUserIds: string[]) => void;
+  onTyping?: (userId: string) => void;
   onQuoteChange?: (quote: StockQuoteChange) => void;
   onStatus?: (status: string) => void;
 };
+
+const TYPING_BROADCAST_EVENT = 'typing';
+
+// presenceState() is keyed by the presence key we track with (the user id),
+// so its keys are exactly the online user ids.
+function onlineUserIdsFrom(channel: { presenceState: () => Record<string, unknown> }): string[] {
+  return Object.keys(channel.presenceState());
+}
 
 export function subscribeToRoomRealtime(
   client: SupabaseRealtimeClient,
   options: RoomRealtimeOptions
 ) {
   const channel = client
-    .channel(getRoomUpdatesTopic(options.roomId))
+    .channel(getRoomUpdatesTopic(options.roomId), {
+      config: { presence: { key: options.userId ?? '' } }
+    })
     .on(
       'postgres_changes',
       {
@@ -117,13 +134,41 @@ export function subscribeToRoomRealtime(
       },
       (payload: RealtimePayload<Record<string, unknown>>) =>
         options.onQuoteChange?.(payload.new as StockQuoteChange)
+    )
+    .on('presence', { event: 'sync' }, () =>
+      options.onPresenceChange?.(onlineUserIdsFrom(channel))
+    )
+    .on(
+      'broadcast',
+      { event: TYPING_BROADCAST_EVENT },
+      (payload: { payload?: { userId?: string } }) => {
+        const userId = payload.payload?.userId;
+        if (userId) {
+          options.onTyping?.(userId);
+        }
+      }
     );
 
-  channel.subscribe(options.onStatus);
+  channel.subscribe((status: string) => {
+    options.onStatus?.(status);
+    if (status === 'SUBSCRIBED' && options.userId) {
+      void channel.track({ user_id: options.userId });
+    }
+  });
 
   return {
     unsubscribe() {
       return channel.unsubscribe();
+    },
+    sendTyping() {
+      if (!options.userId) {
+        return;
+      }
+      void channel.send({
+        type: 'broadcast',
+        event: TYPING_BROADCAST_EVENT,
+        payload: { userId: options.userId }
+      });
     }
   };
 }

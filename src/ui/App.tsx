@@ -13,8 +13,13 @@ import {
   loadingColor,
   spinnerFrame
 } from './loading-animation.js';
-import type { AppState } from './state.js';
-import { buildWelcomeLines, createInitialAppState, resolveShellView } from './state.js';
+import type { AppState, MemberView } from './state.js';
+import {
+  buildWelcomeLines,
+  computeMemberStatuses,
+  createInitialAppState,
+  resolveShellView
+} from './state.js';
 
 export type AppProps = {
   state?: AppState;
@@ -141,6 +146,10 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
 
     if (!key.ctrl && value) {
       setInput((current) => current + value);
+      // Typing a real character (not a command) signals presence to the room.
+      if (session && !value.startsWith('/') && !input.startsWith('/')) {
+        session.notifyTyping();
+      }
     }
   });
 
@@ -267,7 +276,13 @@ export type TopInfoPanelProps = {
 export function TopInfoPanel({ state, userLabel, userRole, height }: TopInfoPanelProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
-  const members = roomId ? state.membersByRoom[roomId] ?? [] : [];
+  const members = roomId
+    ? computeMemberStatuses(
+        state.membersByRoom[roomId] ?? [],
+        state.onlineByRoom[roomId] ?? [],
+        state.typingByRoom[roomId] ?? []
+      )
+    : [];
   const visibleMembers = members.slice(0, 3);
   const hiddenMemberCount = members.length - visibleMembers.length;
   const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
@@ -294,12 +309,17 @@ export function TopInfoPanel({ state, userLabel, userRole, height }: TopInfoPane
             {visibleMembers.map((member, index) => (
               <React.Fragment key={member.userId}>
                 {index > 0 ? <Text>, </Text> : null}
-                <Text color={resolveProfileColor(member.displayColor)}>
+                <Text
+                  color={member.status === 'online' ? resolveProfileColor(member.displayColor) : undefined}
+                  dimColor={member.status === 'offline'}
+                >
                   {member.displayName ?? member.userId}
                 </Text>
-                <Text>
-                  ({member.role}, {member.displayColor ?? 'white'})
+                <Text dimColor={member.status === 'offline'}>
+                  ({member.role}, {member.displayColor ?? 'white'}
+                  {member.status === 'offline' ? ', away' : ''})
                 </Text>
+                {member.typing ? <Text color="cyan"> ✎</Text> : null}
               </React.Fragment>
             ))}
             {hiddenMemberCount > 0 ? <Text dimColor> +{hiddenMemberCount} more</Text> : null}

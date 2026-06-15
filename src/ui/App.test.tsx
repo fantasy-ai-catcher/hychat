@@ -223,6 +223,8 @@ describe('App', () => {
           { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
         ]
       },
+      onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
+      typingByRoom: {},
       watchlistByRoom: { 'room-1': ['AAPL.US', '0700.HK', '600519.CN'] },
       quotesBySymbol: {
         'AAPL.US': {
@@ -268,6 +270,8 @@ describe('App', () => {
           { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
         ]
       },
+      onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
+      typingByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'
@@ -305,6 +309,10 @@ describe('App', () => {
           { roomId: 'room-1', userId: 'user-5', displayName: 'dave', displayColor: 'blue', role: 'member' }
         ]
       },
+      onlineByRoom: {
+        'room-1': ['user-1', 'user-2', 'user-3', 'user-4', 'user-5']
+      },
+      typingByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'
@@ -344,6 +352,8 @@ describe('App', () => {
         ]
       },
       membersByRoom: {},
+      onlineByRoom: {},
+      typingByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'

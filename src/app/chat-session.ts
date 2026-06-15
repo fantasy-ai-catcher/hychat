@@ -65,6 +65,7 @@ type ChatServiceLike = {
   listRoomsWithCounts: () => Promise<RoomWithCountRow[]>;
   createRoom: (name: string, userId: string) => Promise<ServiceRoomSummary>;
   joinRoom: (roomId: string) => Promise<void>;
+  leaveRoom?: (roomId: string) => Promise<void>;
   listMembers?: (roomId: string) => Promise<MemberRow[]>;
   listRecentMessages: (roomId: string) => Promise<ChatMessageRow[]>;
   sendTextMessage: (input: {
@@ -80,6 +81,7 @@ type ChatServiceLike = {
 
 type RoomSubscription = {
   unsubscribe: () => unknown;
+  sendTyping?: () => void;
 };
 
 type StockQuoteChangeRow = {
@@ -92,9 +94,12 @@ type RealtimeLike = {
   subscribeToRoom: (
     roomId: string,
     handlers: {
+      userId?: string;
       onMessage: (message: ChatMessageRow) => void;
       onWatchlistChange: () => void;
       onMembersChange?: () => void;
+      onPresenceChange?: (onlineUserIds: string[]) => void;
+      onTyping?: (userId: string) => void;
       onQuoteChange?: (quote: StockQuoteChangeRow) => void;
       onStatus?: (status: string) => void;
     }
@@ -153,6 +158,10 @@ const helpSections = [
       {
         usage: '/join <number|room id|room name>',
         description: 'Join any room and enter it. No invite needed.'
+      },
+      {
+        usage: '/leave',
+        description: 'Leave the current room and return to the room list.'
       }
     ]
   },
@@ -233,6 +242,11 @@ const helpSections = [
 
 const helpText = formatHelpText(helpSections);
 
+// A remote member's typing badge clears this long after their last keystroke
+// broadcast; we re-broadcast our own typing at most this often while typing.
+const typingTtlMs = 3000;
+const typingThrottleMs = 1500;
+
 // Shown in the status line while a command's network request is in flight.
 // Returns null for input that resolves instantly, so the status does not flash.
 export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
@@ -259,6 +273,8 @@ export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
       return `Creating room ${parsed.nameText}…`;
     case 'join':
       return `Joining ${parsed.room}…`;
+    case 'leave':
+      return 'Leaving…';
     case 'invite-code':
       return 'Creating invite code…';
     case 'invite-code-list':
@@ -298,6 +314,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
   let subscription: RoomSubscription | undefined;
   let pendingAuth: { email: string; inviteCode?: string } | null = null;
   let verifiedEmail: string | null = null;
+  // Per-remote-user timers that clear a "typing" badge if no further typing
+  // broadcast arrives. Reset on each new join so they never leak across rooms.
+  let typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let lastTypingSentAt = 0;
+
+  function clearTypingTimers(): void {
+    for (const timer of typingTimers.values()) {
+      clearTimeout(timer);
+    }
+    typingTimers = new Map();
+  }
 
   function snapshot(): ChatSessionSnapshot {
     return { state, user, statusText, isBusy, helpLines, shouldExit };
@@ -363,13 +390,43 @@ export function createChatSession(options: CreateChatSessionOptions) {
     }
   }
 
+  function markTyping(roomId: string, userId: string): void {
+    apply({ type: 'typing-started', roomId, userId });
+    const existing = typingTimers.get(userId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    typingTimers.set(
+      userId,
+      setTimeout(() => {
+        typingTimers.delete(userId);
+        apply({ type: 'typing-stopped', roomId, userId });
+        emitSnapshotChange();
+      }, typingTtlMs)
+    );
+    emitSnapshotChange();
+  }
+
+  function stopTyping(roomId: string, userId: string): void {
+    const existing = typingTimers.get(userId);
+    if (existing) {
+      clearTimeout(existing);
+      typingTimers.delete(userId);
+    }
+    apply({ type: 'typing-stopped', roomId, userId });
+  }
+
   async function joinRoom(roomId: string): Promise<void> {
     subscription?.unsubscribe();
+    clearTypingTimers();
     apply({ type: 'room-joined', roomId });
     await loadRoomData(roomId);
 
     subscription = options.realtime?.subscribeToRoom(roomId, {
+      userId: user?.id,
       onMessage(message) {
+        // A delivered message ends that sender's typing badge immediately.
+        stopTyping(roomId, message.sender_id);
         apply({ type: 'message-received', message: toChatMessage(message) });
         emitSnapshotChange();
       },
@@ -378,6 +435,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
       },
       onMembersChange() {
         void loadMembers(roomId).then(emitSnapshotChange);
+      },
+      onPresenceChange(onlineUserIds) {
+        apply({ type: 'presence-synced', roomId, userIds: onlineUserIds });
+        emitSnapshotChange();
+      },
+      onTyping(typingUserId) {
+        if (typingUserId === user?.id) {
+          return;
+        }
+        markTyping(roomId, typingUserId);
       },
       onQuoteChange(quote) {
         apply({
@@ -556,6 +623,22 @@ export function createChatSession(options: CreateChatSessionOptions) {
         return;
       }
 
+      case 'leave': {
+        requireUser();
+        const roomId = requireActiveRoom();
+        const room = state.rooms.find((entry) => entry.id === roomId);
+        if (options.service.leaveRoom) {
+          await options.service.leaveRoom(roomId);
+        }
+        subscription?.unsubscribe();
+        subscription = undefined;
+        clearTypingTimers();
+        apply({ type: 'room-left', roomId });
+        await loadRooms();
+        statusText = `Left ${room?.name ?? roomId}.`;
+        return;
+      }
+
       case 'members': {
         requireUser();
         const roomId = requireActiveRoom();
@@ -668,6 +751,21 @@ export function createChatSession(options: CreateChatSessionOptions) {
       }
 
       return snapshot();
+    },
+
+    // Called as the local user types in the composer. Throttled so a fast
+    // typist broadcasts at most once per typingThrottleMs; remote clients
+    // refresh their own clear-timer on each broadcast.
+    notifyTyping(): void {
+      if (!state.activeRoomId || !subscription?.sendTyping) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastTypingSentAt < typingThrottleMs) {
+        return;
+      }
+      lastTypingSentAt = now;
+      subscription.sendTyping();
     },
 
     async handleLine(line: string): Promise<ChatSessionSnapshot> {
