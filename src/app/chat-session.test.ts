@@ -541,7 +541,7 @@ describe('createChatSession', () => {
     ]);
   });
 
-  it('shows member nicknames and colors in the members command', async () => {
+  it('lists members with presence dots in the members command', async () => {
     const { service } = createService();
     const session = createChatSession({ service });
 
@@ -549,7 +549,11 @@ describe('createChatSession', () => {
     await session.handleLine('/join Friends');
     const snapshot = await session.handleLine('/members');
 
-    expect(snapshot.statusText).toBe('owner:liudong(white) member:alice(rose)');
+    // The current user (liudong) is online by definition; alice has no presence.
+    expect(snapshot.statusText).toContain('Members (2):');
+    expect(snapshot.statusText).toContain('liudong (owner)');
+    expect(snapshot.statusText).toContain('alice');
+    expect(snapshot.statusText).toContain('● active'); // legend present
   });
 
   it('shows and updates the current profile color', async () => {
@@ -671,12 +675,12 @@ describe('createChatSession', () => {
 
   it('applies realtime presence to the online member set', async () => {
     const { service } = createService();
-    let presenceHandler: ((userIds: string[]) => void) | undefined;
+    let presenceHandler: ((onlineUserIds: string[]) => void) | undefined;
     const onSnapshotChange = vi.fn();
     const realtime = {
       subscribeToRoom: vi.fn((_roomId, handlers) => {
         presenceHandler = handlers.onPresenceChange;
-        return { unsubscribe: vi.fn() };
+        return { unsubscribe: vi.fn(), sendFocus: vi.fn() };
       })
     };
     const session = createChatSession({ service, realtime, onSnapshotChange });
@@ -694,6 +698,50 @@ describe('createChatSession', () => {
         })
       })
     );
+  });
+
+  it('applies a remote focus broadcast to the active member set', async () => {
+    const { service } = createService();
+    let focusHandler: ((userId: string, active: boolean) => void) | undefined;
+    const onSnapshotChange = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        focusHandler = handlers.onFocus;
+        return { unsubscribe: vi.fn(), sendFocus: vi.fn() };
+      })
+    };
+    const session = createChatSession({ service, realtime, onSnapshotChange });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    onSnapshotChange.mockClear();
+
+    focusHandler?.('user-2', true);
+
+    expect(onSnapshotChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          activeByRoom: expect.objectContaining({ 'room-1': ['user-2'] })
+        })
+      })
+    );
+  });
+
+  it('broadcasts the current focus on join and when notified', async () => {
+    const { service } = createService();
+    const sendFocus = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn(() => ({ unsubscribe: vi.fn(), sendFocus }))
+    };
+    const session = createChatSession({ service, realtime });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    session.notifyFocus(false);
+    expect(sendFocus).toHaveBeenCalledWith(false);
+    session.notifyFocus(true);
+    expect(sendFocus).toHaveBeenCalledWith(true);
   });
 
   it('marks a remote user typing and clears it when their message arrives', async () => {

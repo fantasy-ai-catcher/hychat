@@ -31,13 +31,15 @@ src/
 ├── ui/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText
 │   ├── state.ts              [L1] UI state types, reducer, welcome lines,
-│   │                         computeMemberStatuses (online/offline + typing projection)
+│   │                         computeMemberStatuses (active/online/offline + typing projection)
+│   ├── terminal-focus.ts     [L1/L2] xterm focus reporting (DECSET 1004): enable/parse
+│   │                         CSI I/O so the app knows if its tab is focused
 │   └── loading-animation.ts  [L1] spinner frames + busy-elapsed timer
 ├── supabase/
 │   ├── client.ts             Supabase client factory
 │   └── realtime.ts           realtime topic helpers + subscribeToRoomRealtime
 │                             (postgres_changes for messages / watchlist / members / quotes;
-│                             presence for online members + broadcast for typing)
+│                             presence for online/offline + broadcast for typing & focus)
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN)
     ├── cache.ts              [L1] quote cache TTL policy

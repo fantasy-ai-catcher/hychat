@@ -1,10 +1,12 @@
 import { parseChatInput, type ParsedChatInput } from '../chat/commands.js';
 import { parseCanonicalSymbol } from '../stocks/symbols.js';
 import {
+  computeMemberStatuses,
   createInitialAppState,
   reducer,
   type AppState,
   type ChatMessage,
+  type MemberView,
   type QuoteSummary,
   type RoomMemberSummary,
   type RoomSummary
@@ -82,6 +84,7 @@ type ChatServiceLike = {
 type RoomSubscription = {
   unsubscribe: () => unknown;
   sendTyping?: () => void;
+  sendFocus?: (active: boolean) => void;
 };
 
 type StockQuoteChangeRow = {
@@ -99,6 +102,7 @@ type RealtimeLike = {
       onWatchlistChange: () => void;
       onMembersChange?: () => void;
       onPresenceChange?: (onlineUserIds: string[]) => void;
+      onFocus?: (userId: string, active: boolean) => void;
       onTyping?: (userId: string) => void;
       onQuoteChange?: (quote: StockQuoteChangeRow) => void;
       onStatus?: (status: string) => void;
@@ -318,6 +322,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
   // broadcast arrives. Reset on each new join so they never leak across rooms.
   let typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let lastTypingSentAt = 0;
+  // The local terminal's focus, mirrored into presence so peers can tell an
+  // active member (tab focused) from one who is merely connected.
+  let currentFocus: 'active' | 'online' = 'active';
 
   function clearTypingTimers(): void {
     for (const timer of typingTimers.values()) {
@@ -444,6 +451,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
       },
       onPresenceChange(onlineUserIds) {
         apply({ type: 'presence-synced', roomId, userIds: onlineUserIds });
+        // Membership changed, so re-announce our focus — a member who just
+        // joined would otherwise not learn the focus of those already here.
+        subscription?.sendFocus?.(currentFocus === 'active');
+        emitSnapshotChange();
+      },
+      onFocus(focusUserId, active) {
+        if (focusUserId === user?.id) {
+          return;
+        }
+        apply({ type: 'focus-changed', roomId, userId: focusUserId, active });
         emitSnapshotChange();
       },
       onTyping(typingUserId) {
@@ -658,15 +675,15 @@ export function createChatSession(options: CreateChatSessionOptions) {
           ? await options.service.listMembers(roomId)
           : [];
         apply({ type: 'members-loaded', roomId, members: members.map(toRoomMemberSummary) });
-        statusText =
-          members.length > 0
-            ? members
-                .map(
-                  (member) =>
-                    `${member.role}:${member.display_name ?? member.user_id}(${member.display_color ?? 'white'})`
-                )
-                .join(' ')
-            : 'Members can be invited with /invite <nickname>.';
+        statusText = formatMemberList(
+          computeMemberStatuses(
+            state.membersByRoom[roomId] ?? [],
+            state.onlineByRoom[roomId] ?? [],
+            state.activeByRoom[roomId] ?? [],
+            state.typingByRoom[roomId] ?? [],
+            { currentUserId: user?.id, currentUserActive: currentFocus === 'active' }
+          )
+        );
         return;
       }
 
@@ -778,6 +795,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
       }
       lastTypingSentAt = now;
       subscription.sendTyping();
+    },
+
+    // Called when the terminal gains/loses focus. Broadcast it so peers can
+    // tell an active member (tab focused) from one who is merely connected.
+    notifyFocus(focused: boolean): void {
+      currentFocus = focused ? 'active' : 'online';
+      subscription?.sendFocus?.(focused);
     },
 
     async handleLine(line: string): Promise<ChatSessionSnapshot> {
@@ -982,6 +1006,31 @@ function resolveRoom(input: string, rooms: RoomSummary[]): RoomSummary {
   }
 
   throw new Error(`Unknown room: ${input}`);
+}
+
+function memberStatusDot(status: MemberView['status']): string {
+  if (status === 'active') return '●';
+  if (status === 'online') return '◐';
+  return '○';
+}
+
+// Plain-text member roster for the status line: one member per line with a
+// presence dot, the owner tag, and a typing mark. StatusText caps at 8 lines.
+function formatMemberList(members: MemberView[]): string {
+  if (members.length === 0) {
+    return 'No members in this room yet.';
+  }
+  const visible = members.slice(0, 6);
+  const hiddenCount = members.length - visible.length;
+  const lines = visible.map((member) => {
+    const owner = member.role === 'owner' ? ' (owner)' : '';
+    const typing = member.typing ? ' ✎' : '';
+    return `  ${memberStatusDot(member.status)} ${member.displayName ?? member.userId}${owner}${typing}`;
+  });
+  if (hiddenCount > 0) {
+    lines.push(`  +${hiddenCount} more`);
+  }
+  return `Members (${members.length}):\n${lines.join('\n')}\n● active  ◐ online  ○ away`;
 }
 
 // StatusText renders at most 8 lines, so cap the list at 6 rooms.

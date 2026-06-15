@@ -23,37 +23,57 @@ export type RoomMemberSummary = {
   role: 'owner' | 'member';
 };
 
-// Phase 1 distinguishes connected (online) from a member who has no live
-// connection (offline). Phase 2 will split online into active (terminal tab
-// focused) vs online (unfocused).
-export type MemberStatus = 'online' | 'offline';
+// Three presence levels:
+//   active  — connected and the terminal tab is focused
+//   online  — connected but the tab is unfocused (or focus is undetectable)
+//   offline — a member with no live connection
+export type MemberStatus = 'active' | 'online' | 'offline';
 
 export type MemberView = RoomMemberSummary & {
   status: MemberStatus;
   typing: boolean;
 };
 
+export type ComputeMemberStatusesContext = {
+  // The current user is connected by definition while in the room, so they
+  // never wait on the presence round-trip (which can lag several seconds).
+  currentUserId?: string;
+  // The current user's own terminal focus, known locally without a round-trip.
+  currentUserActive?: boolean;
+};
+
 // Pure projection of the persistent member list onto live presence + typing.
-// A member present in the realtime presence set is online; everyone else is a
-// member who is currently disconnected (offline). The current user is online
-// by definition while in the room, so they never wait on the presence
-// round-trip (which can lag several seconds).
 export function computeMemberStatuses(
   members: RoomMemberSummary[],
   onlineUserIds: string[],
+  activeUserIds: string[],
   typingUserIds: string[],
-  currentUserId?: string
+  context: ComputeMemberStatusesContext = {}
 ): MemberView[] {
   const online = new Set(onlineUserIds);
-  if (currentUserId) {
-    online.add(currentUserId);
+  const active = new Set(activeUserIds);
+  if (context.currentUserId) {
+    online.add(context.currentUserId);
+    if (context.currentUserActive) {
+      active.add(context.currentUserId);
+    } else {
+      active.delete(context.currentUserId);
+    }
   }
   const typing = new Set(typingUserIds);
-  return members.map((member) => ({
-    ...member,
-    status: online.has(member.userId) ? 'online' : 'offline',
-    typing: online.has(member.userId) && typing.has(member.userId)
-  }));
+  return members.map((member) => {
+    const isOnline = online.has(member.userId);
+    const status: MemberStatus = !isOnline
+      ? 'offline'
+      : active.has(member.userId)
+        ? 'active'
+        : 'online';
+    return {
+      ...member,
+      status,
+      typing: isOnline && typing.has(member.userId)
+    };
+  });
 }
 
 export type QuoteSummary = {
@@ -71,6 +91,7 @@ export type AppState = {
   messagesByRoom: Record<string, ChatMessage[]>;
   membersByRoom: Record<string, RoomMemberSummary[]>;
   onlineByRoom: Record<string, string[]>;
+  activeByRoom: Record<string, string[]>;
   typingByRoom: Record<string, string[]>;
   watchlistByRoom: Record<string, string[]>;
   quotesBySymbol: Record<string, QuoteSummary>;
@@ -84,6 +105,7 @@ export type AppAction =
   | { type: 'messages-loaded'; roomId: string; messages: ChatMessage[] }
   | { type: 'members-loaded'; roomId: string; members: RoomMemberSummary[] }
   | { type: 'presence-synced'; roomId: string; userIds: string[] }
+  | { type: 'focus-changed'; roomId: string; userId: string; active: boolean }
   | { type: 'typing-started'; roomId: string; userId: string }
   | { type: 'typing-stopped'; roomId: string; userId: string }
   | { type: 'message-received'; message: ChatMessage }
@@ -97,6 +119,7 @@ export function createInitialAppState(): AppState {
     messagesByRoom: {},
     membersByRoom: {},
     onlineByRoom: {},
+    activeByRoom: {},
     typingByRoom: {},
     watchlistByRoom: {},
     quotesBySymbol: {},
@@ -141,11 +164,13 @@ export function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, activeRoomId: action.roomId };
     case 'room-left': {
       const { [action.roomId]: _online, ...onlineByRoom } = state.onlineByRoom;
+      const { [action.roomId]: _active, ...activeByRoom } = state.activeByRoom;
       const { [action.roomId]: _typing, ...typingByRoom } = state.typingByRoom;
       return {
         ...state,
         activeRoomId: state.activeRoomId === action.roomId ? undefined : state.activeRoomId,
         onlineByRoom,
+        activeByRoom,
         typingByRoom
       };
     }
@@ -165,14 +190,38 @@ export function reducer(state: AppState, action: AppAction): AppState {
           [action.roomId]: action.members
         }
       };
-    case 'presence-synced':
+    case 'presence-synced': {
+      const online = new Set(action.userIds);
       return {
         ...state,
         onlineByRoom: {
           ...state.onlineByRoom,
           [action.roomId]: action.userIds
+        },
+        // Drop active marks for anyone no longer connected.
+        activeByRoom: {
+          ...state.activeByRoom,
+          [action.roomId]: (state.activeByRoom[action.roomId] ?? []).filter((id) =>
+            online.has(id)
+          )
         }
       };
+    }
+    case 'focus-changed': {
+      const current = state.activeByRoom[action.roomId] ?? [];
+      const next = action.active
+        ? current.includes(action.userId)
+          ? current
+          : [...current, action.userId]
+        : current.filter((id) => id !== action.userId);
+      if (next === current) {
+        return state;
+      }
+      return {
+        ...state,
+        activeByRoom: { ...state.activeByRoom, [action.roomId]: next }
+      };
+    }
     case 'typing-started': {
       const current = state.typingByRoom[action.roomId] ?? [];
       if (current.includes(action.userId)) {

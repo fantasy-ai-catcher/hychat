@@ -224,6 +224,7 @@ describe('App', () => {
         ]
       },
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
+      activeByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
       typingByRoom: {},
       watchlistByRoom: { 'room-1': ['AAPL.US', '0700.HK', '600519.CN'] },
       quotesBySymbol: {
@@ -271,6 +272,7 @@ describe('App', () => {
         ]
       },
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
+      activeByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
       typingByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
@@ -309,6 +311,7 @@ describe('App', () => {
         ]
       },
       onlineByRoom: { 'room-1': ['user-1'] },
+      activeByRoom: { 'room-1': ['user-1'] },
       typingByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
@@ -320,6 +323,7 @@ describe('App', () => {
       userLabel: 'liudong',
       userRole: 'admin',
       currentUserId: 'user-1',
+      currentUserActive: true,
       height: 7
     });
     const text = collectText(panel);
@@ -327,7 +331,7 @@ describe('App', () => {
     const alice = textElements.find((element) => collectText(element) === 'alice');
 
     expect(text).toContain('○'); // offline (alice) hollow dot
-    expect(text).toContain('●'); // online (liudong) filled dot
+    expect(text).toContain('●'); // active (liudong, focused) filled dot
     expect(alice?.props.dimColor).toBe(true);
   });
 
@@ -346,6 +350,9 @@ describe('App', () => {
         ]
       },
       onlineByRoom: {
+        'room-1': ['user-1', 'user-2', 'user-3', 'user-4', 'user-5']
+      },
+      activeByRoom: {
         'room-1': ['user-1', 'user-2', 'user-3', 'user-4', 'user-5']
       },
       typingByRoom: {},
@@ -389,6 +396,7 @@ describe('App', () => {
       },
       membersByRoom: {},
       onlineByRoom: {},
+      activeByRoom: {},
       typingByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},

@@ -22,21 +22,32 @@ describe('UI state reducer', () => {
     );
   });
 
-  it('tracks presence and clears room-scoped state on leave', () => {
+  it('tracks online + focus presence and clears room-scoped state on leave', () => {
     let state = reducer(createInitialAppState(), { type: 'room-joined', roomId: 'room-1' });
     state = reducer(state, {
       type: 'presence-synced',
       roomId: 'room-1',
       userIds: ['user-1', 'user-2']
     });
+    state = reducer(state, { type: 'focus-changed', roomId: 'room-1', userId: 'user-1', active: true });
     state = reducer(state, { type: 'typing-started', roomId: 'room-1', userId: 'user-2' });
 
     expect(state.onlineByRoom['room-1']).toEqual(['user-1', 'user-2']);
+    expect(state.activeByRoom['room-1']).toEqual(['user-1']);
     expect(state.typingByRoom['room-1']).toEqual(['user-2']);
+
+    // A member dropping out of presence loses their active mark.
+    const afterLeave = reducer(state, {
+      type: 'presence-synced',
+      roomId: 'room-1',
+      userIds: ['user-2']
+    });
+    expect(afterLeave.activeByRoom['room-1']).toEqual([]);
 
     const left = reducer(state, { type: 'room-left', roomId: 'room-1' });
     expect(left.activeRoomId).toBeUndefined();
     expect(left.onlineByRoom['room-1']).toBeUndefined();
+    expect(left.activeByRoom['room-1']).toBeUndefined();
     expect(left.typingByRoom['room-1']).toBeUndefined();
   });
 
@@ -257,25 +268,37 @@ describe('computeMemberStatuses', () => {
     { roomId: 'room-1', userId: 'user-2', displayName: 'bob', role: 'member' as const }
   ];
 
-  it('marks members in the presence set online and the rest offline', () => {
-    const result = computeMemberStatuses(members, ['user-1'], []);
+  it('distinguishes active, online, and offline', () => {
+    // user-1 connected + focused, user-2 connected + unfocused, no presence for the rest.
+    const result = computeMemberStatuses(members, ['user-1', 'user-2'], ['user-1'], []);
     expect(result.map((m) => [m.userId, m.status])).toEqual([
-      ['user-1', 'online'],
-      ['user-2', 'offline']
+      ['user-1', 'active'],
+      ['user-2', 'online']
     ]);
   });
 
+  it('marks members absent from presence as offline', () => {
+    const result = computeMemberStatuses(members, ['user-1'], ['user-1'], []);
+    expect(result.find((m) => m.userId === 'user-2')?.status).toBe('offline');
+  });
+
   it('only shows typing for an online member', () => {
-    const result = computeMemberStatuses(members, ['user-1'], ['user-1', 'user-2']);
+    const result = computeMemberStatuses(members, ['user-1'], [], ['user-1', 'user-2']);
     expect(result.find((m) => m.userId === 'user-1')?.typing).toBe(true);
     // user-2 is typing in the set but offline, so it must not surface.
     expect(result.find((m) => m.userId === 'user-2')?.typing).toBe(false);
   });
 
-  it('treats the current user as online without waiting on presence', () => {
-    // Empty presence set, but user-2 is the current client → online anyway.
-    const result = computeMemberStatuses(members, [], [], 'user-2');
-    expect(result.find((m) => m.userId === 'user-2')?.status).toBe('online');
-    expect(result.find((m) => m.userId === 'user-1')?.status).toBe('offline');
+  it('treats the current user as online (or active) without waiting on presence', () => {
+    // Empty presence set, but user-2 is the current client.
+    const online = computeMemberStatuses(members, [], [], [], { currentUserId: 'user-2' });
+    expect(online.find((m) => m.userId === 'user-2')?.status).toBe('online');
+    expect(online.find((m) => m.userId === 'user-1')?.status).toBe('offline');
+
+    const active = computeMemberStatuses(members, [], [], [], {
+      currentUserId: 'user-2',
+      currentUserActive: true
+    });
+    expect(active.find((m) => m.userId === 'user-2')?.status).toBe('active');
   });
 });

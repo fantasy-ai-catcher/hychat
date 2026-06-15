@@ -20,6 +20,7 @@ import {
   createInitialAppState,
   resolveShellView
 } from './state.js';
+import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
 
 export type AppProps = {
   state?: AppState;
@@ -43,6 +44,7 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
   const { exit } = useApp();
   const [input, setInput] = useState('');
   const [cursorVisible, setCursorVisible] = useState(true);
+  const [focused, setFocused] = useState(true);
   const [snapshot, setSnapshot] = useState<ChatSessionSnapshot>(() =>
     createSnapshot(fixedState ?? createInitialAppState())
   );
@@ -57,6 +59,13 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
         : undefined,
     [service, realtime]
   );
+
+  useEffect(() => {
+    return watchTerminalFocus((isFocused) => {
+      setFocused(isFocused);
+      session?.notifyFocus(isFocused);
+    });
+  }, [session]);
 
   useEffect(() => {
     if (!session) {
@@ -132,6 +141,12 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       return;
     }
 
+    // Focus-reporting escape sequences (CSI I / CSI O) also reach stdin; the
+    // terminal-focus watcher handles them, so never let them enter the input.
+    if (isFocusEventOnly(value) || value === '[I' || value === '[O') {
+      return;
+    }
+
     if (key.return) {
       const submitted = input;
       setInput('');
@@ -168,6 +183,7 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       userLabel={snapshot.user?.displayName}
       userRole={snapshot.user?.role}
       currentUserId={snapshot.user?.id}
+      currentUserActive={focused}
       promptLabel=">"
       input={input}
       cursorVisible={cursorVisible}
@@ -185,6 +201,7 @@ type AppShellProps = {
   userLabel?: string;
   userRole?: string;
   currentUserId?: string;
+  currentUserActive?: boolean;
   promptLabel: string;
   input: string;
   cursorVisible: boolean;
@@ -200,6 +217,7 @@ export function AppShell({
   userLabel,
   userRole,
   currentUserId,
+  currentUserActive,
   promptLabel,
   input,
   cursorVisible,
@@ -230,7 +248,7 @@ export function AppShell({
 
   return (
     <Box flexDirection="column" height={shellHeight}>
-      {TopInfoPanel({ state, userLabel, userRole, currentUserId, height: topHeight })}
+      {TopInfoPanel({ state, userLabel, userRole, currentUserId, currentUserActive, height: topHeight })}
       {MessageViewport({ messages: messages.slice(-chatHeight), height: chatHeight })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
@@ -274,18 +292,27 @@ export type TopInfoPanelProps = {
   userLabel?: string;
   userRole?: string;
   currentUserId?: string;
+  currentUserActive?: boolean;
   height?: number;
 };
 
-export function TopInfoPanel({ state, userLabel, userRole, currentUserId, height }: TopInfoPanelProps) {
+export function TopInfoPanel({
+  state,
+  userLabel,
+  userRole,
+  currentUserId,
+  currentUserActive,
+  height
+}: TopInfoPanelProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
   const members = roomId
     ? computeMemberStatuses(
         state.membersByRoom[roomId] ?? [],
         state.onlineByRoom[roomId] ?? [],
+        state.activeByRoom[roomId] ?? [],
         state.typingByRoom[roomId] ?? [],
-        currentUserId
+        { currentUserId, currentUserActive }
       )
     : [];
   const visibleMembers = members.slice(0, 3);
@@ -312,15 +339,17 @@ export function TopInfoPanel({ state, userLabel, userRole, currentUserId, height
         {members.length > 0 ? (
           <>
             {visibleMembers.map((member, index) => {
-              const online = member.status === 'online';
-              const accent = online ? resolveProfileColor(member.displayColor) : undefined;
+              const offline = member.status === 'offline';
+              // ● focused tab, ◐ connected but unfocused, ○ disconnected.
+              const dot = member.status === 'active' ? '●' : member.status === 'online' ? '◐' : '○';
+              const accent = offline ? undefined : resolveProfileColor(member.displayColor);
               return (
                 <React.Fragment key={member.userId}>
                   {index > 0 ? <Text>{'  '}</Text> : null}
-                  <Text color={accent} dimColor={!online}>
-                    {online ? '●' : '○'}{' '}
+                  <Text color={accent} dimColor={offline}>
+                    {dot}{' '}
                   </Text>
-                  <Text color={accent} dimColor={!online}>
+                  <Text color={accent} dimColor={offline}>
                     {member.displayName ?? member.userId}
                   </Text>
                   {member.role === 'owner' ? <Text dimColor> (owner)</Text> : null}

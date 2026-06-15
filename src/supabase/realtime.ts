@@ -61,21 +61,26 @@ type SupabaseRealtimeClient = {
 export type RoomRealtimeOptions = {
   roomId: string;
   // Identifies this client for presence + typing. When omitted (e.g. in unit
-  // tests) presence is not tracked and typing is a no-op.
+  // tests) presence is not tracked and typing/focus are no-ops.
   userId?: string;
   onMessage: (message: RoomMessageChange) => void;
   onWatchlistChange: (change: WatchlistChange) => void;
   onMembersChange?: (change: MemberChange) => void;
+  // Connected members (online/offline). Terminal focus rides a separate
+  // broadcast (onFocus), not presence, because re-tracking presence to update a
+  // status field accumulates metas instead of replacing them.
   onPresenceChange?: (onlineUserIds: string[]) => void;
+  onFocus?: (userId: string, active: boolean) => void;
   onTyping?: (userId: string) => void;
   onQuoteChange?: (quote: StockQuoteChange) => void;
   onStatus?: (status: string) => void;
 };
 
 const TYPING_BROADCAST_EVENT = 'typing';
+const FOCUS_BROADCAST_EVENT = 'focus';
 
-// presenceState() is keyed by the presence key we track with (the user id),
-// so its keys are exactly the online user ids.
+// presenceState() is keyed by the presence key we track with (the user id), so
+// its keys are exactly the online user ids.
 function onlineUserIdsFrom(channel: { presenceState: () => Record<string, unknown> }): string[] {
   return Object.keys(channel.presenceState());
 }
@@ -147,6 +152,16 @@ export function subscribeToRoomRealtime(
           options.onTyping?.(userId);
         }
       }
+    )
+    .on(
+      'broadcast',
+      { event: FOCUS_BROADCAST_EVENT },
+      (payload: { payload?: { userId?: string; active?: boolean } }) => {
+        const userId = payload.payload?.userId;
+        if (userId) {
+          options.onFocus?.(userId, payload.payload?.active === true);
+        }
+      }
     );
 
   channel.subscribe((status: string) => {
@@ -168,6 +183,16 @@ export function subscribeToRoomRealtime(
         type: 'broadcast',
         event: TYPING_BROADCAST_EVENT,
         payload: { userId: options.userId }
+      });
+    },
+    sendFocus(active: boolean) {
+      if (!options.userId) {
+        return;
+      }
+      void channel.send({
+        type: 'broadcast',
+        event: FOCUS_BROADCAST_EVENT,
+        payload: { userId: options.userId, active }
       });
     }
   };

@@ -76,6 +76,10 @@ describe('room realtime subscriptions', () => {
       {
         event: 'broadcast',
         filter: { event: 'typing' }
+      },
+      {
+        event: 'broadcast',
+        filter: { event: 'focus' }
       }
     ]);
     expect(subscribe).toHaveBeenCalledOnce();
@@ -155,11 +159,54 @@ describe('room realtime subscriptions', () => {
       }
     );
 
+    // Presence carries connection only; focus rides a separate broadcast.
     expect(track).toHaveBeenCalledWith({ user_id: 'user-1' });
 
     const presenceEntry = handlers.find((entry) => entry.filter.event === 'sync');
     presenceEntry?.handler(undefined);
     expect(onPresenceChange).toHaveBeenCalledWith(['user-1', 'user-2']);
+  });
+
+  it('broadcasts and receives focus changes', () => {
+    const handlers: Array<{
+      filter: Record<string, unknown>;
+      handler: (payload: { payload?: { userId?: string; active?: boolean } }) => void;
+    }> = [];
+    const send = vi.fn();
+    const channel = {
+      on(_event: string, filter: Record<string, unknown>, handler: (payload: unknown) => void) {
+        handlers.push({ filter, handler });
+        return channel;
+      },
+      subscribe: vi.fn(),
+      unsubscribe: vi.fn(),
+      track: vi.fn(),
+      presenceState: () => ({}),
+      send
+    };
+    const onFocus = vi.fn();
+
+    const subscription = subscribeToRoomRealtime(
+      { channel: vi.fn(() => channel) },
+      {
+        roomId: 'room-1',
+        userId: 'user-1',
+        onMessage: vi.fn(),
+        onWatchlistChange: vi.fn(),
+        onFocus
+      }
+    );
+
+    subscription.sendFocus?.(false);
+    expect(send).toHaveBeenCalledWith({
+      type: 'broadcast',
+      event: 'focus',
+      payload: { userId: 'user-1', active: false }
+    });
+
+    const focusEntry = handlers.find((entry) => entry.filter.event === 'focus');
+    focusEntry?.handler({ payload: { userId: 'user-2', active: true } });
+    expect(onFocus).toHaveBeenCalledWith('user-2', true);
   });
 
   it('broadcasts and receives typing events', () => {

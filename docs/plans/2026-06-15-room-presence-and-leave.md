@@ -23,10 +23,15 @@ list but absent from realtime presence", so no tombstone row is needed.
 
 - **Phase 1 (this branch):** `/leave`; presence split of online vs offline;
   typing indicator. No terminal-focus dependency — all robust.
-- **Phase 2 (separate, later):** terminal focus reporting (xterm DECSET 1004 /
-  tmux focus-events) to split `online` into `active` vs `online`, plus the
-  color treatment. Riskiest part; needs real-terminal testing; gated behind
-  graceful degradation (unsupported terminal → everyone connected = online).
+- **Phase 2 (done):** terminal focus reporting (xterm DECSET 1004 / tmux
+  focus-events) splits `online` into `active` (tab focused) vs `online`
+  (unfocused), shown as `●` / `◐` / `○`. Graceful degradation: a terminal that
+  never sends focus events keeps focus = true, so connected == active.
+  **Focus travels by broadcast, not presence:** re-`track()`ing presence to
+  update a status field accumulates metas instead of replacing them
+  (confirmed in testing), so presence carries online/offline only and a
+  `focus` broadcast (like typing) carries active/online. On each presence sync
+  every client re-broadcasts its focus so a newcomer learns who is active.
 
 ## Phase 1 implementation
 
