@@ -352,7 +352,6 @@ export function TopInfoPanel({
                   <Text color={accent} dimColor={offline}>
                     {member.displayName ?? member.userId}
                   </Text>
-                  {member.role === 'owner' ? <Text dimColor> (owner)</Text> : null}
                   {member.typing ? <Text color="cyanBright"> ✎</Text> : null}
                 </React.Fragment>
               );

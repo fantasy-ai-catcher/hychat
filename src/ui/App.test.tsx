@@ -290,8 +290,8 @@ describe('App', () => {
     const liudong = textElements.find((element) => collectText(element) === 'liudong');
     const alice = textElements.find((element) => collectText(element) === 'alice');
 
-    // Owner is tagged; plain members carry no role/color-name noise.
-    expect(text).toContain('(owner)');
+    // Members carry no role/color-name noise — just a dot + colored name.
+    expect(text).not.toContain('(owner');
     expect(text).not.toContain('(member');
     expect(text).not.toContain('rose');
     expect(text).toContain('●'); // online presence dot

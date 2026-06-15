@@ -1023,9 +1023,8 @@ function formatMemberList(members: MemberView[]): string {
   const visible = members.slice(0, 6);
   const hiddenCount = members.length - visible.length;
   const lines = visible.map((member) => {
-    const owner = member.role === 'owner' ? ' (owner)' : '';
     const typing = member.typing ? ' ✎' : '';
-    return `  ${memberStatusDot(member.status)} ${member.displayName ?? member.userId}${owner}${typing}`;
+    return `  ${memberStatusDot(member.status)} ${member.displayName ?? member.userId}${typing}`;
   });
   if (hiddenCount > 0) {
     lines.push(`  +${hiddenCount} more`);

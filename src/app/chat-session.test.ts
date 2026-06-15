@@ -551,8 +551,9 @@ describe('createChatSession', () => {
 
     // The current user (liudong) is online by definition; alice has no presence.
     expect(snapshot.statusText).toContain('Members (2):');
-    expect(snapshot.statusText).toContain('liudong (owner)');
+    expect(snapshot.statusText).toContain('liudong');
     expect(snapshot.statusText).toContain('alice');
+    expect(snapshot.statusText).not.toContain('(owner');
     expect(snapshot.statusText).toContain('● active'); // legend present
   });
 
