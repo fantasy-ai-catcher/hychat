@@ -24,7 +24,7 @@ function collectText(node: React.ReactNode): string {
   return '';
 }
 
-function collectTextElements(node: React.ReactNode): Array<React.ReactElement<{ children?: React.ReactNode; color?: string }>> {
+function collectTextElements(node: React.ReactNode): Array<React.ReactElement<{ children?: React.ReactNode; color?: string; dimColor?: boolean }>> {
   if (node === null || node === undefined || typeof node === 'boolean') {
     return [];
   }
@@ -288,11 +288,47 @@ describe('App', () => {
     const liudong = textElements.find((element) => collectText(element) === 'liudong');
     const alice = textElements.find((element) => collectText(element) === 'alice');
 
-    expect(text).toContain('(owner, rose)');
-    expect(text).toContain('(member, cyan)');
-    expect(text).toContain('(member, green)');
+    // Owner is tagged; plain members carry no role/color-name noise.
+    expect(text).toContain('(owner)');
+    expect(text).not.toContain('(member');
+    expect(text).not.toContain('rose');
+    expect(text).toContain('●'); // online presence dot
     expect(liudong?.props.color).toMatch(/^#/);
     expect(alice?.props.color).toMatch(/^#/);
+  });
+
+  it('shows an offline member with a hollow dot and dimmed name', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {
+        'room-1': [
+          { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' }
+        ]
+      },
+      onlineByRoom: { 'room-1': ['user-1'] },
+      typingByRoom: {},
+      watchlistByRoom: {},
+      quotesBySymbol: {},
+      connectionStatus: 'connected'
+    };
+
+    const panel = TopInfoPanel({
+      state,
+      userLabel: 'liudong',
+      userRole: 'admin',
+      currentUserId: 'user-1',
+      height: 7
+    });
+    const text = collectText(panel);
+    const textElements = collectTextElements(panel);
+    const alice = textElements.find((element) => collectText(element) === 'alice');
+
+    expect(text).toContain('○'); // offline (alice) hollow dot
+    expect(text).toContain('●'); // online (liudong) filled dot
+    expect(alice?.props.dimColor).toBe(true);
   });
 
   it('summarizes extra room members in the top panel', () => {

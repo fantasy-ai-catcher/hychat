@@ -311,22 +311,23 @@ export function TopInfoPanel({ state, userLabel, userRole, currentUserId, height
         Members:{' '}
         {members.length > 0 ? (
           <>
-            {visibleMembers.map((member, index) => (
-              <React.Fragment key={member.userId}>
-                {index > 0 ? <Text>, </Text> : null}
-                <Text
-                  color={member.status === 'online' ? resolveProfileColor(member.displayColor) : undefined}
-                  dimColor={member.status === 'offline'}
-                >
-                  {member.displayName ?? member.userId}
-                </Text>
-                <Text dimColor={member.status === 'offline'}>
-                  ({member.role}, {member.displayColor ?? 'white'}
-                  {member.status === 'offline' ? ', away' : ''})
-                </Text>
-                {member.typing ? <Text color="cyan"> ✎</Text> : null}
-              </React.Fragment>
-            ))}
+            {visibleMembers.map((member, index) => {
+              const online = member.status === 'online';
+              const accent = online ? resolveProfileColor(member.displayColor) : undefined;
+              return (
+                <React.Fragment key={member.userId}>
+                  {index > 0 ? <Text>{'  '}</Text> : null}
+                  <Text color={accent} dimColor={!online}>
+                    {online ? '●' : '○'}{' '}
+                  </Text>
+                  <Text color={accent} dimColor={!online}>
+                    {member.displayName ?? member.userId}
+                  </Text>
+                  {member.role === 'owner' ? <Text dimColor> (owner)</Text> : null}
+                  {member.typing ? <Text color="cyanBright"> ✎</Text> : null}
+                </React.Fragment>
+              );
+            })}
             {hiddenMemberCount > 0 ? <Text dimColor> +{hiddenMemberCount} more</Text> : null}
           </>
         ) : (
