@@ -135,6 +135,11 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     const service = createHychatService(supabase);
     const realtime = createRealtimeAdapter(supabase);
 
+    // Open the realtime websocket eagerly so the first /join does not pay the
+    // socket handshake before a member's presence can be announced. The auth
+    // token is applied to the live socket as soon as the session resolves.
+    supabase.realtime.connect();
+
     render(React.createElement(App, { service, realtime }));
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start HyChat.';

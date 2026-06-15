@@ -349,7 +349,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
     statusText = message;
   }
 
-  async function loadRoomData(roomId: string): Promise<void> {
+  // Loads everything except stock quotes and returns the room's watched
+  // symbols. Quote fetching hits an Edge Function that can take seconds, so the
+  // join path runs it off the critical path (after presence is announced).
+  async function loadRoomSnapshot(roomId: string): Promise<string[]> {
     const [messages, watchlist, members] = await Promise.all([
       options.service.listRecentMessages(roomId),
       options.service.listWatchlist(roomId),
@@ -357,13 +360,13 @@ export function createChatSession(options: CreateChatSessionOptions) {
     ]);
     apply({ type: 'messages-loaded', roomId, messages: messages.map(toChatMessage) });
     apply({ type: 'members-loaded', roomId, members: members.map(toRoomMemberSummary) });
-    apply({
-      type: 'watchlist-updated',
-      roomId,
-      symbols: watchlist.map((item) => item.canonical_symbol)
-    });
-
     const symbols = watchlist.map((item) => item.canonical_symbol);
+    apply({ type: 'watchlist-updated', roomId, symbols });
+    return symbols;
+  }
+
+  async function loadRoomData(roomId: string): Promise<void> {
+    const symbols = await loadRoomSnapshot(roomId);
     if (symbols.length > 0) {
       await refreshQuotes(symbols, false);
     }
@@ -420,7 +423,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
     subscription?.unsubscribe();
     clearTypingTimers();
     apply({ type: 'room-joined', roomId });
-    await loadRoomData(roomId);
+    // Load messages/members/watchlist first (so messages-loaded cannot clobber
+    // a realtime message), then subscribe so presence is announced before the
+    // slow quote refresh runs.
+    const symbols = await loadRoomSnapshot(roomId);
 
     subscription = options.realtime?.subscribeToRoom(roomId, {
       userId: user?.id,
@@ -465,6 +471,12 @@ export function createChatSession(options: CreateChatSessionOptions) {
         emitSnapshotChange();
       }
     });
+
+    // Off the critical path: the room is already interactive and presence is
+    // announced, so refresh quotes without blocking the join.
+    if (symbols.length > 0) {
+      void refreshQuotes(symbols, false).then(emitSnapshotChange);
+    }
   }
 
   function requireUser(): HychatUser {

@@ -10,7 +10,8 @@ vi.mock('ink', () => ({
 
 vi.mock('./supabase/client.js', () => ({
   createHychatSupabaseClient: vi.fn((_config, options) => ({
-    authStoragePath: options?.authStoragePath
+    authStoragePath: options?.authStoragePath,
+    realtime: { connect: vi.fn() }
   }))
 }));
 
