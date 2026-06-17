@@ -48,21 +48,41 @@ function projectRef(url) {
 
 function serviceRoleKey(env, ref) {
   if (env.SUPABASE_SERVICE_ROLE_KEY) return env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // The CLI prints the keys as JSON to stdout, but its PostHog telemetry can
+  // hang on shutdown and make the process exit non-zero *after* the JSON is
+  // already out. So we parse whatever stdout we got even on a non-zero exit,
+  // and disable telemetry to avoid the hang in the first place.
+  let out;
   try {
-    const out = execFileSync(
+    out = execFileSync(
       'supabase',
       ['projects', 'api-keys', '--project-ref', ref, '-o', 'json'],
-      { encoding: 'utf8' }
+      { encoding: 'utf8', env: { ...env, DO_NOT_TRACK: '1' } }
     );
-    const keys = JSON.parse(out);
-    const row = keys.find((k) => k.name === 'service_role');
-    if (row?.api_key) return row.api_key;
   } catch (error) {
-    throw new Error(
-      'Could not get the service-role key. Set SUPABASE_SERVICE_ROLE_KEY or link the Supabase CLI.\n' +
-        String(error)
-    );
+    out = error.stdout;
+    if (typeof out !== 'string' || !out.trim()) {
+      throw new Error(
+        'Could not get the service-role key. Set SUPABASE_SERVICE_ROLE_KEY or link the Supabase CLI.\n' +
+          String(error)
+      );
+    }
   }
+
+  let keys;
+  try {
+    keys = JSON.parse(out);
+  } catch {
+    throw new Error('Could not parse the supabase CLI output as JSON.');
+  }
+  // Prefer the legacy JWT service_role key: the GoTrue admin endpoints
+  // (/auth/v1/admin/*) accept it but reject the newer sb_secret_… keys (403).
+  // Fall back to the secret key only if the legacy one is gone.
+  const row =
+    keys.find((k) => k.name === 'service_role' && k.type === 'legacy') ??
+    keys.find((k) => k.type === 'secret' && k.secret_jwt_template?.role === 'service_role');
+  if (row?.api_key) return row.api_key;
   throw new Error('service_role key not found in supabase CLI output.');
 }
 
