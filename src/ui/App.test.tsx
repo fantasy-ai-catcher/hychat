@@ -1,7 +1,16 @@
 import React from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { App, AppShell, InputComposer, StatusBar, StatusText, TopInfoPanel } from './App.js';
+import {
+  App,
+  AppShell,
+  InputComposer,
+  MessageViewport,
+  resolveEditorAction,
+  StatusBar,
+  StatusText,
+  TopInfoPanel
+} from './App.js';
 import { createInitialAppState, type AppState } from './state.js';
 
 function collectText(node: React.ReactNode): string {
@@ -127,24 +136,56 @@ describe('App', () => {
     expect(element.props.paddingX).toBe(1);
   });
 
-  it('renders a cursor after the current input', () => {
-    const visibleElement = InputComposer({
+  it('renders the full input with the prompt', () => {
+    const element = InputComposer({
       promptLabel: '>',
       input: '/start liudong',
+      cursor: 14,
+      cursorVisible: true
+    });
+
+    expect(collectText(element)).toContain('> /start liudong');
+  });
+
+  it('renders a block caret over the character at the cursor', () => {
+    const element = InputComposer({
+      promptLabel: '>',
+      input: 'abc',
+      cursor: 1,
+      cursorVisible: true
+    });
+    const caret = collectTextElements(element).find(
+      (node) => (node.props as { inverse?: boolean }).inverse === true
+    );
+
+    expect(collectText(caret)).toBe('b');
+  });
+
+  it('drops the inverse caret on the blink-off frame', () => {
+    const element = InputComposer({
+      promptLabel: '>',
+      input: 'abc',
+      cursor: 1,
+      cursorVisible: false
+    });
+    const inverted = collectTextElements(element).filter(
+      (node) => (node.props as { inverse?: boolean }).inverse === true
+    );
+
+    expect(inverted).toHaveLength(0);
+  });
+
+  it('renders one row per line for multiline input', () => {
+    const element = InputComposer({
+      promptLabel: '>',
+      input: 'line1\nline2',
+      cursor: 11,
       cursorVisible: true
     }) as React.ReactElement<{ children: React.ReactNode[] }>;
-    const hiddenElement = InputComposer({
-      promptLabel: '>',
-      input: '/start liudong',
-      cursorVisible: false
-    }) as React.ReactElement<{ children: React.ReactNode[] }>;
 
-    expect(visibleElement.props.children.at(-1)).toMatchObject({
-      props: { children: '|' }
-    });
-    expect(hiddenElement.props.children.at(-1)).toMatchObject({
-      props: { children: ' ' }
-    });
+    expect(element.props.children).toHaveLength(2);
+    expect(collectText(element)).toContain('line1');
+    expect(collectText(element)).toContain('line2');
   });
 
   it('renders a welcome screen instead of placeholder panels when no room is active', () => {
@@ -416,5 +457,106 @@ describe('App', () => {
     const sender = textElements.find((element) => collectText(element).includes('liudong:'));
 
     expect(sender?.props.color).toMatch(/^#/);
+  });
+});
+
+describe('resolveEditorAction', () => {
+  type Key = Parameters<typeof resolveEditorAction>[1];
+
+  function key(overrides: Partial<Key> = {}): Key {
+    return {
+      upArrow: false,
+      downArrow: false,
+      leftArrow: false,
+      rightArrow: false,
+      pageDown: false,
+      pageUp: false,
+      home: false,
+      end: false,
+      return: false,
+      escape: false,
+      ctrl: false,
+      shift: false,
+      tab: false,
+      backspace: false,
+      delete: false,
+      meta: false,
+      ...overrides
+    } as Key;
+  }
+
+  it('inserts printable characters', () => {
+    expect(resolveEditorAction('a', key())).toEqual({ type: 'insert', text: 'a' });
+  });
+
+  it('inserts pasted multi-character text', () => {
+    expect(resolveEditorAction('hello', key())).toEqual({ type: 'insert', text: 'hello' });
+  });
+
+  it('maps Shift+Tab to a newline and ignores a plain Tab', () => {
+    expect(resolveEditorAction('', key({ tab: true, shift: true }))).toEqual({ type: 'newline' });
+    expect(resolveEditorAction('', key({ tab: true }))).toBeUndefined();
+  });
+
+  it('maps arrows to cursor movement, with Option for word jumps', () => {
+    expect(resolveEditorAction('', key({ leftArrow: true }))).toEqual({ type: 'moveLeft' });
+    expect(resolveEditorAction('', key({ rightArrow: true }))).toEqual({ type: 'moveRight' });
+    expect(resolveEditorAction('', key({ leftArrow: true, meta: true }))).toEqual({
+      type: 'moveWordLeft'
+    });
+    expect(resolveEditorAction('', key({ rightArrow: true, meta: true }))).toEqual({
+      type: 'moveWordRight'
+    });
+    expect(resolveEditorAction('', key({ upArrow: true }))).toEqual({ type: 'moveUp' });
+    expect(resolveEditorAction('', key({ downArrow: true }))).toEqual({ type: 'moveDown' });
+  });
+
+  it('maps backspace/delete to deleting before the cursor (Option deletes a word)', () => {
+    expect(resolveEditorAction('', key({ backspace: true }))).toEqual({ type: 'backspace' });
+    expect(resolveEditorAction('', key({ delete: true }))).toEqual({ type: 'backspace' });
+    expect(resolveEditorAction('', key({ delete: true, meta: true }))).toEqual({
+      type: 'deleteWordBack'
+    });
+  });
+
+  it('maps the readline control shortcuts', () => {
+    expect(resolveEditorAction('a', key({ ctrl: true }))).toEqual({ type: 'moveLineStart' });
+    expect(resolveEditorAction('e', key({ ctrl: true }))).toEqual({ type: 'moveLineEnd' });
+    expect(resolveEditorAction('u', key({ ctrl: true }))).toEqual({ type: 'killToLineStart' });
+    expect(resolveEditorAction('k', key({ ctrl: true }))).toEqual({ type: 'killToLineEnd' });
+    expect(resolveEditorAction('w', key({ ctrl: true }))).toEqual({ type: 'deleteWordBack' });
+  });
+
+  it('ignores Option-modified characters and empty keys', () => {
+    expect(resolveEditorAction('a', key({ meta: true }))).toBeUndefined();
+    expect(resolveEditorAction('', key())).toBeUndefined();
+  });
+});
+
+describe('MessageViewport timestamps', () => {
+  const messages = [
+    {
+      id: 'message-1',
+      roomId: 'room-1',
+      senderId: 'user-1',
+      senderName: 'liudong',
+      senderColor: 'rose',
+      body: 'hello',
+      // 08:00 UTC -> 16:00 Beijing.
+      createdAt: '2026-06-06T08:00:00.000Z'
+    }
+  ];
+
+  it('shows the Beijing date and time before a message when timestamps are on', () => {
+    const view = MessageViewport({ messages, height: 10, showTimestamps: true });
+    const text = collectText(view);
+    expect(text).toContain('06-06 16:00');
+    expect(text).toContain('liudong:');
+  });
+
+  it('hides the timestamp by default', () => {
+    const text = collectText(MessageViewport({ messages, height: 10 }));
+    expect(text).not.toContain('16:00');
+    expect(text).toContain('liudong:');
   });
 });

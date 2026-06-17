@@ -29,9 +29,15 @@ src/
 │   ├── profile-colors.ts     [L1] color palette + helpers
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
 ├── ui/
-│   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText
+│   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText;
+│   │                         Ctrl+T toggles per-message Beijing-time timestamps;
+│   │                         resolveEditorAction maps keypresses -> editor actions
+│   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
+│   │                         applyEditorAction (cursor move/word ops/kill/newline,
+│   │                         readline-style, code-point aware)
 │   ├── state.ts              [L1] UI state types, reducer, welcome lines,
-│   │                         computeMemberStatuses (active/online/offline + typing projection)
+│   │                         computeMemberStatuses (active/online/offline + typing projection),
+│   │                         formatBeijingTime (ISO -> Asia/Shanghai "MM-DD HH:MM")
 │   ├── terminal-focus.ts     [L1/L2] xterm focus reporting (DECSET 1004): enable/parse
 │   │                         CSI I/O so the app knows if its tab is focused
 │   └── loading-animation.ts  [L1] spinner frames + busy-elapsed timer

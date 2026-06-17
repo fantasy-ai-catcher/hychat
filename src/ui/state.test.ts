@@ -4,6 +4,7 @@ import {
   buildWelcomeLines,
   computeMemberStatuses,
   createInitialAppState,
+  formatBeijingTime,
   reducer,
   resolveShellView
 } from './state.js';
@@ -300,5 +301,36 @@ describe('computeMemberStatuses', () => {
       currentUserActive: true
     });
     expect(active.find((m) => m.userId === 'user-2')?.status).toBe('active');
+  });
+});
+
+describe('formatBeijingTime', () => {
+  it('converts a UTC timestamp to Beijing MM-DD HH:MM (UTC+8)', () => {
+    // 07:25 UTC -> 15:25 Beijing, same day.
+    expect(formatBeijingTime('2026-06-17T07:25:36.435592+00:00')).toBe('06-17 15:25');
+  });
+
+  it('handles a Z-suffixed UTC timestamp', () => {
+    expect(formatBeijingTime('2026-06-15T12:24:10.618966Z')).toBe('06-15 20:24');
+  });
+
+  it('rolls the date forward when Beijing crosses a day boundary', () => {
+    // 18:00 UTC on 06-17 -> 02:00 Beijing on 06-18; the date makes this visible.
+    expect(formatBeijingTime('2026-06-17T18:00:00+00:00')).toBe('06-18 02:00');
+  });
+
+  it('renders midnight as 00:00, not 24:00', () => {
+    // 16:00 UTC -> 00:00 next-day Beijing.
+    expect(formatBeijingTime('2026-06-17T16:00:00+00:00')).toBe('06-18 00:00');
+  });
+
+  it('respects an explicit offset, not the wall-clock digits', () => {
+    // 15:25 at +08:00 is already Beijing time.
+    expect(formatBeijingTime('2026-06-17T15:25:00+08:00')).toBe('06-17 15:25');
+  });
+
+  it('returns an empty string for an unparseable input', () => {
+    expect(formatBeijingTime('not a date')).toBe('');
+    expect(formatBeijingTime('')).toBe('');
   });
 });

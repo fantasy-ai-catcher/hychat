@@ -156,6 +156,31 @@ export function buildWelcomeLines(userDisplayName?: string): string[] {
   ];
 }
 
+// Beijing time has a fixed UTC+8 offset (no DST), so the Asia/Shanghai zone
+// renders the same wall clock for everyone regardless of the machine's locale.
+// hourCycle 'h23' keeps midnight as 00, not 24.
+const beijingTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Shanghai',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23'
+});
+
+// Format an ISO timestamp (as supabase-js returns it) as Beijing "MM-DD HH:MM".
+// Returns '' for anything that does not parse, so callers can render nothing
+// rather than "Invalid Date". Assemble from parts so the order is fixed
+// regardless of the formatter's locale conventions.
+export function formatBeijingTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = beijingTimeFormatter.formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('month')}-${part('day')} ${part('hour')}:${part('minute')}`;
+}
+
 export function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'rooms-loaded':
