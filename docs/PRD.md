@@ -42,7 +42,7 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 
 1. 用户规模是小群体，初始目标为 1-3 个房间、每个房间 2-10 人。
 2. 用户入口使用邮箱 OTP 登录（新账号需邀请码），底层使用 Supabase Auth 和 RLS 管理身份；显示名与身份解耦、可改。
-3. 股票数据源第一版默认使用 Twelve Data，通过可替换的 Stock Provider adapter 接入。
+3. 股票数据源默认使用 Yahoo Finance 免密钥接口，通过可替换的 Stock Provider adapter 接入。
 4. 股票查询第一版覆盖美股、港股和 A 股，内部使用统一 symbol 规范隔离不同 API 的代码格式。
 5. 股票报价可接受延迟缓存，默认刷新间隔为 60-300 秒，具体取决于外部 API 限额。
 6. 如果后续要求港股/A 股盘中实时行情，优先评估 Longbridge 或 Futu 作为替换 provider。
@@ -169,11 +169,10 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 
 1. 侧边栏展示 watchlist 报价摘要。
 2. 支持命令 `/stock SYMBOL` 查看单只股票详情。
-3. 支持消息中识别 `$SYMBOL`，并在本地提示可查看详情。
-4. 股票信息包含价格、涨跌幅、更新时间和数据源。
-5. 行情数据使用当前报价缓存，避免 terminal 客户端直接访问第三方 API。
-6. 当前报价缓存只保存每个 symbol 的最新一条记录，不保存历史行情。
-7. 缓存过期后由 Supabase Edge Function 触发刷新，刷新失败时可展示过期缓存和错误状态。
+3. 股票信息包含价格、涨跌幅、更新时间和数据源。
+4. 行情数据使用当前报价缓存，避免 terminal 客户端直接访问第三方 API。
+5. 当前报价缓存只保存每个 symbol 的最新一条记录，不保存历史行情。
+6. 缓存过期后由 Supabase Edge Function 触发刷新，刷新失败时可展示过期缓存和错误状态。
 
 验收标准：
 
@@ -184,7 +183,7 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 
 ### 6.7 股票数据源和市场覆盖
 
-第一版股票数据源选型为 Twelve Data。Twelve Data 覆盖美股、港股和 A 股，HTTP API 简单，适合放在 Supabase Edge Function 中作为缓存刷新服务。它的定位是展示型报价，不作为交易级实时行情源。
+股票数据源选型为 Yahoo Finance 免密钥接口。Yahoo 单一数据源即覆盖美股、港股、A 股和日股，HTTP API 简单且无需 API key，适合放在 Supabase Edge Function 中作为缓存刷新服务。它的定位是展示型报价，不作为交易级实时行情源；为非官方接口，可能限流或变更，必要时通过 adapter 切换到其他 provider。
 
 功能点：
 
@@ -201,8 +200,8 @@ HyChat 是一个面向小范围朋友群的终端聊天室。用户希望在 ter
 1. `/watch add AAPL.US` 可以添加美股。
 2. `/watch add 0700.HK` 可以添加港股。
 3. `/watch add 600519.CN` 可以添加 A 股。
-4. Twelve Data API key 只存在于 Supabase Edge Function secret 中。
-5. 将 provider 从 Twelve Data 切到另一个 adapter 时，terminal 命令和数据库 canonical symbol 不需要变化。
+4. Yahoo 免密钥接口无需 API key；如未来切换到需要 key 的 provider，key 只存在于 Supabase Edge Function secret 中。
+5. 将 provider 从 Yahoo 切到另一个 adapter 时，terminal 命令和数据库 canonical symbol 不需要变化。
 
 ### 6.8 Terminal UI
 
