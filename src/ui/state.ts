@@ -125,6 +125,35 @@ export function computeMemberStatuses(
   });
 }
 
+// Pick a member-grid column count from the terminal width. Wider terminals fit
+// more columns; the count is clamped to [1, memberCount] so we never render an
+// empty column or a grid wider than there are members.
+export function memberGridColumns(terminalWidth: number, memberCount: number): number {
+  const byWidth = terminalWidth >= 120 ? 3 : terminalWidth >= 80 ? 2 : 1;
+  return Math.max(1, Math.min(byWidth, memberCount));
+}
+
+export type MemberGridLayout = {
+  columns: number;
+  // Row-major: each inner array is one rendered line of up to `columns` members,
+  // filled left-to-right then top-to-bottom.
+  rows: MemberView[][];
+};
+
+// Arrange members into a row-major grid sized for the terminal width. Pure so
+// both the panel render and the header-height calculation can share it.
+export function layoutMemberGrid(
+  members: MemberView[],
+  terminalWidth: number
+): MemberGridLayout {
+  const columns = memberGridColumns(terminalWidth, members.length);
+  const rows: MemberView[][] = [];
+  for (let index = 0; index < members.length; index += columns) {
+    rows.push(members.slice(index, index + columns));
+  }
+  return { columns, rows };
+}
+
 export type QuoteSummary = {
   symbol: string;
   name?: string;

@@ -8,6 +8,17 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- The room members in the header now lay out in a 1/2/3-column grid sized to the
+  terminal width, on their own lines below a `Members` label, instead of a single
+  truncated row with `+N more`. All members are shown.
+- `Ctrl+S` shows/hides the Stocks section and `Ctrl+P` shows/hides the Members
+  section of the header, so you can reclaim that space for chat.
+
+### Changed
+- Each watched stock now shows its symbol code (e.g. `7709.HK`) in a dim column
+  to the right of its name.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

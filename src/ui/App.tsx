@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
+import stringWidth from 'string-width';
 
 import {
   createChatSession,
@@ -24,13 +25,14 @@ import {
   loadingColor,
   spinnerFrame
 } from './loading-animation.js';
-import type { AppState, MemberView } from './state.js';
+import type { AppState, MemberGridLayout, MemberView } from './state.js';
 import {
   buildWelcomeLines,
   computeMemberStatuses,
   createInitialAppState,
   formatActivityLine,
   formatBeijingTime,
+  layoutMemberGrid,
   mergeChatTimeline,
   resolveShellView
 } from './state.js';
@@ -118,6 +120,8 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
   const [busyTick, setBusyTick] = useState(0);
   const [busyStartedAt, setBusyStartedAt] = useState<number | undefined>();
   const [showTimestamps, setShowTimestamps] = useState(false);
+  const [showStocks, setShowStocks] = useState(true);
+  const [showMembers, setShowMembers] = useState(true);
 
   useEffect(() => {
     if (!snapshot.isBusy) {
@@ -164,6 +168,18 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       return;
     }
 
+    // Ctrl+S / Ctrl+P show/hide the Stocks / Members sections of the top panel.
+    // (Ctrl+M is unusable here — it is the same byte as Enter.)
+    const toggle = resolveTopPanelToggle(value, key);
+    if (toggle === 'stocks') {
+      setShowStocks((current) => !current);
+      return;
+    }
+    if (toggle === 'members') {
+      setShowMembers((current) => !current);
+      return;
+    }
+
     // Focus-reporting escape sequences (CSI I / CSI O) also reach stdin; the
     // terminal-focus watcher handles them, so never let them enter the input.
     if (isFocusEventOnly(value) || value === '[I' || value === '[O') {
@@ -198,6 +214,7 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
 
   const activeState = fixedState ?? snapshot.state;
   const terminalRows = process.stdout.rows;
+  const terminalColumns = process.stdout.columns;
 
   return (
     <AppShell
@@ -217,7 +234,10 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       cursor={buffer.cursor}
       cursorVisible={cursorVisible}
       showTimestamps={showTimestamps}
+      showStocks={showStocks}
+      showMembers={showMembers}
       height={terminalRows}
+      width={terminalColumns}
     />
   );
 }
@@ -237,7 +257,10 @@ type AppShellProps = {
   cursor?: number;
   cursorVisible: boolean;
   showTimestamps?: boolean;
+  showStocks?: boolean;
+  showMembers?: boolean;
   height?: number;
+  width?: number;
 };
 
 export function AppShell({
@@ -255,7 +278,10 @@ export function AppShell({
   cursor,
   cursorVisible,
   showTimestamps,
-  height
+  showStocks = true,
+  showMembers = true,
+  height,
+  width
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
@@ -263,8 +289,10 @@ export function AppShell({
     ? mergeChatTimeline(state.messagesByRoom[roomId] ?? [], state.activityByRoom[roomId] ?? [])
     : [];
   const shellHeight = Math.max(height ?? process.stdout.rows ?? 24, 12);
+  const terminalWidth = width ?? process.stdout.columns ?? 80;
   const watchlist = buildWatchlistTable(selectWatchlistQuotes(state, roomId));
-  const topHeight = topPanelHeight(watchlist);
+  const memberGrid = layoutMemberGrid(selectMembers(state, roomId, currentUserId, currentUserActive), terminalWidth);
+  const topHeight = topPanelHeight({ watchlist, memberGrid, showStocks, showMembers });
   const statusHeight = getStatusHeight(statusText);
   // The composer is 2 border rows plus one row per input line, so multiline
   // input grows the bottom region (and shrinks the chat) instead of overflowing.
@@ -293,7 +321,17 @@ export function AppShell({
 
   return (
     <Box flexDirection="column" height={shellHeight}>
-      {TopInfoPanel({ state, userLabel, userRole, currentUserId, currentUserActive, height: topHeight })}
+      {TopInfoPanel({
+        state,
+        userLabel,
+        userRole,
+        currentUserId,
+        currentUserActive,
+        showStocks,
+        showMembers,
+        terminalWidth,
+        height: topHeight
+      })}
       {MessageViewport({
         messages: messages.slice(-chatHeight),
         height: chatHeight,
@@ -363,15 +401,52 @@ function selectWatchlistQuotes(
   });
 }
 
-// Header box height = border (2) + title (1) + members (1) + stock lines. The
-// stock section is one line when empty ("Stocks: -"), otherwise a "Stocks"
-// label plus one line per visible row plus an optional "+N more" line.
-function topPanelHeight(table: WatchlistTable): number {
-  const stockLines =
-    table.rows.length === 0
+// Projects a room's persistent members onto live presence/typing. Shared by
+// AppShell (to size the header) and TopInfoPanel (to render it).
+function selectMembers(
+  state: AppState,
+  roomId: string | undefined,
+  currentUserId: string | undefined,
+  currentUserActive: boolean | undefined
+): MemberView[] {
+  if (!roomId) {
+    return [];
+  }
+  return computeMemberStatuses(
+    state.membersByRoom[roomId] ?? [],
+    state.onlineByRoom[roomId] ?? [],
+    state.activeByRoom[roomId] ?? [],
+    state.typingByRoom[roomId] ?? [],
+    { currentUserId, currentUserActive }
+  );
+}
+
+export type TopPanelHeightInput = {
+  watchlist: WatchlistTable;
+  memberGrid: MemberGridLayout;
+  showStocks: boolean;
+  showMembers: boolean;
+};
+
+// Header box height = border (2) + title (1) + member lines + stock lines.
+// Each section collapses to 0 lines when hidden. The members section is one
+// "Members: -" line when empty, otherwise a "Members" label plus one line per
+// grid row. The stocks section is one "Stocks: -" line when empty, otherwise a
+// "Stocks" label plus one line per visible row plus an optional "+N more" line.
+function topPanelHeight({
+  watchlist,
+  memberGrid,
+  showStocks,
+  showMembers
+}: TopPanelHeightInput): number {
+  const memberCount = memberGrid.rows.reduce((sum, row) => sum + row.length, 0);
+  const memberLines = !showMembers ? 0 : memberCount === 0 ? 1 : 1 + memberGrid.rows.length;
+  const stockLines = !showStocks
+    ? 0
+    : watchlist.rows.length === 0
       ? 1
-      : 1 + table.rows.length + (table.hiddenCount > 0 ? 1 : 0);
-  return 4 + stockLines;
+      : 1 + watchlist.rows.length + (watchlist.hiddenCount > 0 ? 1 : 0);
+  return 3 + memberLines + stockLines;
 }
 
 function directionColor(direction: WatchlistDirection): 'green' | 'red' | undefined {
@@ -390,8 +465,19 @@ export type TopInfoPanelProps = {
   userRole?: string;
   currentUserId?: string;
   currentUserActive?: boolean;
+  showStocks?: boolean;
+  showMembers?: boolean;
+  terminalWidth?: number;
   height?: number;
 };
+
+// ● focused tab, ◐ connected but unfocused, ○ disconnected/offline.
+function memberDot(status: MemberView['status']): string {
+  return status === 'active' ? '●' : status === 'online' ? '◐' : '○';
+}
+
+// Cap a single member cell so one long name can't stretch the whole grid.
+const maxMemberCellWidth = 24;
 
 export function TopInfoPanel({
   state,
@@ -399,21 +485,20 @@ export function TopInfoPanel({
   userRole,
   currentUserId,
   currentUserActive,
+  showStocks = true,
+  showMembers = true,
+  terminalWidth = process.stdout.columns ?? 80,
   height
 }: TopInfoPanelProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
-  const members = roomId
-    ? computeMemberStatuses(
-        state.membersByRoom[roomId] ?? [],
-        state.onlineByRoom[roomId] ?? [],
-        state.activeByRoom[roomId] ?? [],
-        state.typingByRoom[roomId] ?? [],
-        { currentUserId, currentUserActive }
-      )
-    : [];
-  const visibleMembers = members.slice(0, 3);
-  const hiddenMemberCount = members.length - visibleMembers.length;
+  const members = selectMembers(state, roomId, currentUserId, currentUserActive);
+  const memberGrid = layoutMemberGrid(members, terminalWidth);
+  // One shared cell width keeps every grid column aligned across rows.
+  const memberCellWidth = Math.min(
+    Math.max(0, ...members.map((member) => stringWidth(`${memberDot(member.status)} ${member.displayName ?? member.userId}`))),
+    maxMemberCellWidth
+  );
   const watchlist = buildWatchlistTable(selectWatchlistQuotes(state, roomId));
 
   return (
@@ -431,35 +516,30 @@ export function TopInfoPanel({
           {userLabel ?? '-'} {userRole ?? '-'} {state.connectionStatus}
         </Text>
       </Text>
-      <Text>
-        Members:{' '}
-        {members.length > 0 ? (
-          <>
-            {visibleMembers.map((member, index) => {
-              const offline = member.status === 'offline';
-              // ● focused tab, ◐ connected but unfocused, ○ disconnected.
-              const dot = member.status === 'active' ? '●' : member.status === 'online' ? '◐' : '○';
-              const accent = offline ? undefined : resolveProfileColor(member.displayColor);
-              return (
-                <React.Fragment key={member.userId}>
-                  {index > 0 ? <Text>{'  '}</Text> : null}
-                  <Text color={accent} dimColor={offline}>
-                    {dot}{' '}
-                  </Text>
-                  <Text color={accent} dimColor={offline}>
-                    {member.displayName ?? member.userId}
-                  </Text>
-                  {member.typing ? <Text color="cyanBright"> ✎</Text> : null}
-                </React.Fragment>
-              );
-            })}
-            {hiddenMemberCount > 0 ? <Text dimColor> +{hiddenMemberCount} more</Text> : null}
-          </>
-        ) : (
-          '-'
-        )}
-      </Text>
-      {watchlist.rows.length === 0 ? (
+      {!showMembers ? null : members.length === 0 ? (
+        <Text>Members: -</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Text>Members</Text>
+          {memberGrid.rows.map((row, rowIndex) => (
+            <Box key={rowIndex} paddingLeft={2}>
+              {row.map((member) => {
+                const offline = member.status === 'offline';
+                const accent = offline ? undefined : resolveProfileColor(member.displayColor);
+                return (
+                  <Box key={member.userId} width={memberCellWidth} flexShrink={0} marginRight={2}>
+                    <Text color={accent} dimColor={offline} wrap="truncate">
+                      {memberDot(member.status)} {member.displayName ?? member.userId}
+                    </Text>
+                    {member.typing ? <Text color="cyanBright"> ✎</Text> : null}
+                  </Box>
+                );
+              })}
+            </Box>
+          ))}
+        </Box>
+      )}
+      {!showStocks ? null : watchlist.rows.length === 0 ? (
         <Text>Stocks: -</Text>
       ) : (
         <Box flexDirection="column">
@@ -468,6 +548,9 @@ export function TopInfoPanel({
             <Box key={row.key} paddingLeft={2}>
               <Box width={watchlist.labelWidth} flexShrink={0} marginRight={2}>
                 <Text wrap="truncate">{row.label}</Text>
+              </Box>
+              <Box width={watchlist.symbolWidth} flexShrink={0} marginRight={2}>
+                <Text dimColor>{row.symbol}</Text>
               </Box>
               <Box
                 width={watchlist.priceWidth}
@@ -659,6 +742,27 @@ function locateCaret(lines: string[][], caret: number): { line: number; column: 
 }
 
 type InputKey = Parameters<Parameters<typeof useInput>[0]>[1];
+
+/**
+ * Map a keypress to a top-panel section toggle: Ctrl+S → stocks, Ctrl+P →
+ * members. Returns undefined for everything else. Ctrl+M is intentionally not
+ * used — it is the same byte (CR) as Enter and can't be told apart from submit.
+ */
+export function resolveTopPanelToggle(
+  value: string,
+  key: InputKey
+): 'stocks' | 'members' | undefined {
+  if (!key.ctrl) {
+    return undefined;
+  }
+  if (value === 's') {
+    return 'stocks';
+  }
+  if (value === 'p') {
+    return 'members';
+  }
+  return undefined;
+}
 
 /**
  * Translate a keypress into a pure editor action (readline/Emacs conventions).

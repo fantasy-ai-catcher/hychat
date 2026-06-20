@@ -7,6 +7,7 @@ import {
   InputComposer,
   MessageViewport,
   resolveEditorAction,
+  resolveTopPanelToggle,
   StatusBar,
   StatusText,
   TopInfoPanel
@@ -329,8 +330,9 @@ describe('App', () => {
     });
     const text = collectText(panel);
     const textElements = collectTextElements(panel);
-    const liudong = textElements.find((element) => collectText(element) === 'liudong');
-    const alice = textElements.find((element) => collectText(element) === 'alice');
+    // The dot and name share one colored Text cell, e.g. "● liudong".
+    const liudong = textElements.find((element) => collectText(element) === '● liudong');
+    const alice = textElements.find((element) => collectText(element) === '● alice');
 
     // Members carry no role/color-name noise — just a dot + colored name.
     expect(text).not.toContain('(owner');
@@ -371,14 +373,14 @@ describe('App', () => {
     });
     const text = collectText(panel);
     const textElements = collectTextElements(panel);
-    const alice = textElements.find((element) => collectText(element) === 'alice');
+    const alice = textElements.find((element) => collectText(element) === '○ alice');
 
     expect(text).toContain('○'); // offline (alice) hollow dot
     expect(text).toContain('●'); // active (liudong, focused) filled dot
     expect(alice?.props.dimColor).toBe(true);
   });
 
-  it('summarizes extra room members in the top panel', () => {
+  it('renders all room members in the grid without a "+N more" cap', () => {
     const state: AppState = {
       rooms: [{ id: 'room-1', name: 'Friends' }],
       activeRoomId: 'room-1',
@@ -409,6 +411,7 @@ describe('App', () => {
       state,
       userLabel: 'liudong',
       userRole: 'admin',
+      terminalWidth: 120,
       height: 7
     });
     const text = collectText(panel);
@@ -416,9 +419,63 @@ describe('App', () => {
     expect(text).toContain('liudong');
     expect(text).toContain('alice');
     expect(text).toContain('bob');
-    expect(text).toContain('+2 more');
-    expect(text).not.toContain('carol');
-    expect(text).not.toContain('dave');
+    expect(text).toContain('carol');
+    expect(text).toContain('dave');
+    expect(text).not.toContain('more');
+  });
+
+  it('hides the members section when showMembers is false', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {
+        'room-1': [
+          { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' }
+        ]
+      },
+      onlineByRoom: { 'room-1': ['user-1'] },
+      activeByRoom: { 'room-1': ['user-1'] },
+      typingByRoom: {},
+      activityByRoom: {},
+      watchlistByRoom: {},
+      quotesBySymbol: {},
+      connectionStatus: 'connected'
+    };
+
+    const shown = collectText(TopInfoPanel({ state, showMembers: true, height: 7 }));
+    const hidden = collectText(TopInfoPanel({ state, showMembers: false, height: 7 }));
+
+    expect(shown).toContain('Members');
+    expect(shown).toContain('liudong');
+    expect(hidden).not.toContain('Members');
+    expect(hidden).not.toContain('liudong');
+  });
+
+  it('hides the stocks section when showStocks is false', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {},
+      onlineByRoom: {},
+      activeByRoom: {},
+      typingByRoom: {},
+      activityByRoom: {},
+      watchlistByRoom: { 'room-1': ['AAPL.US'] },
+      quotesBySymbol: {
+        'AAPL.US': { symbol: 'AAPL.US', price: 123, changePercent: 1.2, cacheStatus: 'hit' }
+      },
+      connectionStatus: 'connected'
+    };
+
+    const shown = collectText(TopInfoPanel({ state, showStocks: true, height: 7 }));
+    const hidden = collectText(TopInfoPanel({ state, showStocks: false, height: 7 }));
+
+    expect(shown).toContain('Stocks');
+    expect(shown).toContain('AAPL.US');
+    expect(hidden).not.toContain('Stocks');
+    expect(hidden).not.toContain('AAPL.US');
   });
 
   it('colors watched-stock change green when up and red when down', () => {
@@ -448,7 +505,7 @@ describe('App', () => {
     expect(down?.props.color).toBe('red');
   });
 
-  it('renders the shortname instead of the symbol code when known', () => {
+  it('renders the shortname as the label and the symbol code in its own column', () => {
     const state: AppState = {
       rooms: [{ id: 'room-1', name: 'Friends' }],
       activeRoomId: 'room-1',
@@ -469,7 +526,8 @@ describe('App', () => {
     const text = collectText(panel);
 
     expect(text).toContain('腾讯控股');
-    expect(text).not.toContain('0700.HK');
+    // The code now shows as its own dim column alongside the shortname.
+    expect(text).toContain('0700.HK');
   });
 
   it('renders message sender names with their profile color', () => {
@@ -586,6 +644,31 @@ describe('resolveEditorAction', () => {
   it('ignores Option-modified characters and empty keys', () => {
     expect(resolveEditorAction('a', key({ meta: true }))).toBeUndefined();
     expect(resolveEditorAction('', key())).toBeUndefined();
+  });
+
+  it('does not treat the top-panel toggle keys as editor actions', () => {
+    // Ctrl+S / Ctrl+P fall through to undefined so they never edit the buffer.
+    expect(resolveEditorAction('s', key({ ctrl: true }))).toBeUndefined();
+    expect(resolveEditorAction('p', key({ ctrl: true }))).toBeUndefined();
+  });
+});
+
+describe('resolveTopPanelToggle', () => {
+  type Key = Parameters<typeof resolveTopPanelToggle>[1];
+
+  function key(overrides: Partial<Key> = {}): Key {
+    return { ctrl: false, shift: false, meta: false, ...overrides } as Key;
+  }
+
+  it('maps Ctrl+S to the stocks toggle and Ctrl+P to the members toggle', () => {
+    expect(resolveTopPanelToggle('s', key({ ctrl: true }))).toBe('stocks');
+    expect(resolveTopPanelToggle('p', key({ ctrl: true }))).toBe('members');
+  });
+
+  it('ignores the same letters without Ctrl, and other Ctrl keys', () => {
+    expect(resolveTopPanelToggle('s', key())).toBeUndefined();
+    expect(resolveTopPanelToggle('p', key())).toBeUndefined();
+    expect(resolveTopPanelToggle('m', key({ ctrl: true }))).toBeUndefined();
   });
 });
 
