@@ -386,7 +386,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
     apply({ type: 'members-loaded', roomId, members: members.map(toRoomMemberSummary) });
   }
 
-  async function refreshQuotes(symbols: string[], force: boolean): Promise<void> {
+  async function refreshQuotes(symbols: string[], force: boolean): Promise<QuoteApiResult> {
     const result = (await options.service.getQuotes(symbols, force)) as QuoteApiResult;
     const quotes = (result.quotes ?? []).map(toQuoteSummary);
     if (quotes.length > 0) {
@@ -395,9 +395,11 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
     if (result.failed?.length) {
       statusText = `Stock refresh warning: ${result.failed
-        .map((item) => `${item.symbol} ${item.reason}`)
+        .map((item) => `${item.symbol} ${describeQuoteFailure(item.reason)}`)
         .join(', ')}`;
     }
+
+    return result;
   }
 
   function markTyping(roomId: string, userId: string): void {
@@ -712,10 +714,24 @@ export function createChatSession(options: CreateChatSessionOptions) {
       }
 
       case 'stock': {
-        requireUser();
+        // Stocks are a shared, in-room feature. Look the quote up first so a
+        // typo isn't pinned to everyone's panel, then add it to the room
+        // watchlist so it shows in the top Stocks line for the whole room.
+        const currentUser = requireUser();
+        const roomId = requireActiveRoom();
         const symbol = normalizeSymbol(command.symbol);
-        await refreshQuotes([symbol], false);
-        statusText = `Stock loaded: ${symbol}.`;
+        const result = await refreshQuotes([symbol], false);
+        const failure = result.failed?.find((item) => item.symbol === symbol);
+        if (failure) {
+          statusText =
+            failure.reason === 'symbol_not_found'
+              ? `No quote for ${symbol}. Check the symbol — e.g. AAPL.US, 0700.HK, 600519.CN, 7203.JP.`
+              : `${symbol}: ${describeQuoteFailure(failure.reason)}`;
+          return;
+        }
+        await options.service.addWatchSymbol({ roomId, symbol, addedBy: currentUser.id });
+        await loadRoomData(roomId);
+        statusText = `Watching ${symbol}.`;
         return;
       }
 
@@ -977,6 +993,13 @@ const signedOutStatus =
 
 function signedInStatus(user: HychatUser): string {
   return `Signed in as ${user.displayName} (${user.role}). Change your name any time with /name <new name>.`;
+}
+
+// Turn a provider failure reason into short, human text for the status line.
+function describeQuoteFailure(reason: string): string {
+  if (reason === 'symbol_not_found') return 'not found';
+  if (reason.startsWith('provider_http_')) return 'provider error';
+  return reason;
 }
 
 function normalizeSymbol(input: string): string {

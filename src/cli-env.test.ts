@@ -20,7 +20,7 @@ describe('loadRuntimeDotenv', () => {
         [
           'SUPABASE_URL=https://home.supabase.co',
           'SUPABASE_PUBLISHABLE_KEY=home-key',
-          'STOCK_PROVIDER=twelve_data'
+          'STOCK_PROVIDER=yahoo_finance'
         ].join('\n')
       );
       writeFileSync(
@@ -40,7 +40,7 @@ describe('loadRuntimeDotenv', () => {
       expect(env).toEqual({
         SUPABASE_URL: 'https://cwd.supabase.co',
         SUPABASE_PUBLISHABLE_KEY: 'shell-key',
-        STOCK_PROVIDER: 'twelve_data',
+        STOCK_PROVIDER: 'yahoo_finance',
         STOCK_QUOTE_CACHE_TTL_SECONDS: '120'
       });
     } finally {

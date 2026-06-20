@@ -240,7 +240,7 @@ describe('App', () => {
     expect(text).toContain('/rooms');
   });
 
-  it('renders session details, members, and watched stocks in a compact status bar', () => {
+  it('shows only identity, room, and connection in the bottom bar (members/stocks are in the top panel)', () => {
     const state: AppState = {
       rooms: [{ id: 'room-1', name: 'Friends' }],
       activeRoomId: 'room-1',
@@ -291,13 +291,11 @@ describe('App', () => {
     expect(text).toContain('admin');
     expect(text).toContain('Friends');
     expect(text).toContain('connected');
-    expect(text).toContain('members');
-    expect(text).toContain('alice');
-    expect(text).toContain('+1');
-    expect(text).toContain('stocks');
-    expect(text).toContain('AAPL.US');
-    expect(text).toContain('+1.2%');
-    expect(text).toContain('+2');
+    // Members and stocks are shown in the top panel, not duplicated here.
+    expect(text).not.toContain('members');
+    expect(text).not.toContain('alice');
+    expect(text).not.toContain('stocks');
+    expect(text).not.toContain('AAPL.US');
   });
 
   it('renders room members with role and selected color in the top panel', () => {
@@ -416,6 +414,32 @@ describe('App', () => {
     expect(text).toContain('+2 more');
     expect(text).not.toContain('carol');
     expect(text).not.toContain('dave');
+  });
+
+  it('colors watched-stock change green when up and red when down', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {},
+      onlineByRoom: {},
+      activeByRoom: {},
+      typingByRoom: {},
+      watchlistByRoom: { 'room-1': ['AAPL.US', '0700.HK'] },
+      quotesBySymbol: {
+        'AAPL.US': { symbol: 'AAPL.US', price: 123, changePercent: 1.2, cacheStatus: 'hit' },
+        '0700.HK': { symbol: '0700.HK', price: 300, changePercent: -0.5, cacheStatus: 'hit' }
+      },
+      connectionStatus: 'connected'
+    };
+
+    const panel = TopInfoPanel({ state, userLabel: 'liudong', userRole: 'admin', height: 7 });
+    const textElements = collectTextElements(panel);
+    const up = textElements.find((element) => collectText(element) === '+1.20%');
+    const down = textElements.find((element) => collectText(element) === '-0.50%');
+
+    expect(up?.props.color).toBe('green');
+    expect(down?.props.color).toBe('red');
   });
 
   it('renders message sender names with their profile color', () => {

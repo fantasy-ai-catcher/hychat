@@ -3,7 +3,7 @@ import { z } from 'zod';
 export type AppConfig = {
   supabaseUrl: string;
   supabasePublishableKey: string;
-  stockProvider: 'twelve_data';
+  stockProvider: 'yahoo_finance';
   stockQuoteCacheTtlSeconds: number;
 };
 
@@ -14,7 +14,7 @@ export type ParseEnvResult =
 const envSchema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
-  STOCK_PROVIDER: z.literal('twelve_data').default('twelve_data'),
+  STOCK_PROVIDER: z.literal('yahoo_finance').default('yahoo_finance'),
   STOCK_QUOTE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60)
 });
 

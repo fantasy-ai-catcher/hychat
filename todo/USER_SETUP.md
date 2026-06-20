@@ -14,7 +14,7 @@
 supabase login
 ```
 
-4. 注册 Twelve Data 并创建 API key：https://twelvedata.com/
+4. 股票报价使用 Yahoo Finance 的免密钥接口，无需注册或申请 API key。
 
 ## 2. 配置 Supabase 项目
 
@@ -37,10 +37,10 @@ supabase db push
 supabase functions deploy get-stock-quotes
 ```
 
-5. 写入 Edge Function secrets：
+5. （可选）调整 Edge Function 报价缓存 TTL。Yahoo 接口无需 API key：
 
 ```bash
-supabase secrets set TWELVE_DATA_API_KEY=<your-twelve-data-key> STOCK_QUOTE_CACHE_TTL_SECONDS=60
+supabase secrets set STOCK_QUOTE_CACHE_TTL_SECONDS=60
 ```
 
 不要把 `SUPABASE_SERVICE_ROLE_KEY` 写入本地 `.env`。它只应该由 Supabase Edge Function 在服务端使用。
@@ -71,7 +71,7 @@ cp .env.example ~/.config/hychat/.env
 ```text
 SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
-STOCK_PROVIDER=twelve_data
+STOCK_PROVIDER=yahoo_finance
 STOCK_QUOTE_CACHE_TTL_SECONDS=60
 ```
 
@@ -182,6 +182,6 @@ select public.cleanup_orphan_stock_quotes();
 ## 7. 现有限制
 
 1. MVP 使用 Supabase Postgres Changes 做实时同步，Broadcast/Presence 和 typing 状态后续再升级。
-2. 股票 provider 当前默认 Twelve Data，但代码已有 provider/cache 抽象，后续可以切 Longbridge、Futu 或其他 API。
+2. 股票 provider 当前默认 Yahoo Finance（免密钥），代码已有 provider/cache 抽象，后续可以切 Longbridge、Futu 或其他 API。
 3. terminal client 只使用 publishable/anon key，不应持有 service role key。
 4. Homebrew 分发和 tap 发布步骤见 `todo/HOMEBREW_DISTRIBUTION.md`。

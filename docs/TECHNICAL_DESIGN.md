@@ -32,20 +32,21 @@
 
 ### 1.3 外部服务
 
-股票数据通过 adapter 接入。MVP 默认 provider 为 Twelve Data。
+股票数据通过 adapter 接入。当前默认 provider 为 Yahoo Finance（免密钥）。
 
 选型结论：
 
-1. MVP 使用 Twelve Data 查询美股、港股和 A 股。
-2. Twelve Data API key 放在 Supabase Edge Function secret 中。
-3. terminal client、数据库 watchlist 和聊天功能只使用内部 canonical symbol，不直接依赖 Twelve Data 的 symbol 格式。
-4. 后续如果要求港股/A 股盘中实时行情，优先切换到 Longbridge；如果可以接受运行 OpenD 网关，也可评估 Futu。
+1. 默认使用 Yahoo Finance 的 `v8/finance/chart` 免密钥接口查询美股、港股、A 股和日股，零额外成本，单一数据源覆盖四个市场。
+2. 接口无需 API key；Edge Function 仅依赖标准 Supabase secrets。
+3. terminal client、数据库 watchlist 和聊天功能只使用内部 canonical symbol，由 adapter 负责映射到 Yahoo symbol（US 无后缀、`.HK`、`.SS`/`.SZ`、`.T`）。
+4. Yahoo 为非官方接口，可能限流或变更；若港股/A 股不稳定，可加 Sina/Tencent 作为 fallback；若要求更强实时行情，可切换 Longbridge / Futu。
 
 Provider 候选：
 
 | Provider | 适用性 | 优势 | 劣势 | 当前决策 |
 | --- | --- | --- | --- | --- |
-| Twelve Data | 高 | HTTP API 简单，覆盖美股、港股、A 股，适合 Supabase Edge Function | 港股/A 股实时性和额度取决于付费档，偏展示型报价 | MVP 默认 |
+| Yahoo Finance | 高 | 免密钥，单源覆盖美股/港股/A 股/日股，HTTP 简单，适合 Edge Function | 非官方接口，可能限流/变更/封 IP | 当前默认 |
+| Twelve Data | 中 | HTTP API 简单，官方 | 免费档偏美股，港股/A 股/日股多为付费 | 已弃用 |
 | Longbridge | 高 | 覆盖 US/HK/CN，有 Node SDK，实时行情能力更强 | 需要账号、行情权限和更复杂的鉴权 | 实时行情升级首选 |
 | Futu/moomoo | 中高 | 港美 A 覆盖强，实时能力强 | 通常需要 OpenD 网关，不适合直接放进 Edge Function | 备选 |
 | Financial Modeling Prep | 中 | 基本面和财务数据强，全球覆盖 | 港股/A 股通常需要更高付费档，报价覆盖需逐项验证 | 财务数据补充 |
@@ -55,7 +56,7 @@ Provider 候选：
 
 文档依据：
 
-1. Twelve Data docs/stocks/pricing：https://twelvedata.com/docs、https://twelvedata.com/stocks、https://twelvedata.com/pricing
+1. Yahoo Finance（非官方）：`https://query1.finance.yahoo.com/v8/finance/chart/<symbol>`，参考实现见 yfinance 库
 2. Longbridge OpenAPI：https://open.longbridge.com/
 3. Futu OpenAPI：https://openapi.futunn.com/
 4. Financial Modeling Prep pricing：https://site.financialmodelingprep.com/developer/docs/pricing
@@ -471,19 +472,20 @@ with check (
 
 当前支持：
 
-| 输入示例 | Canonical symbol | Market | Twelve Data 参数 |
+| 输入示例 | Canonical symbol | Market | Yahoo symbol |
 | --- | --- | --- | --- |
-| `AAPL`, `AAPL.US` | `AAPL.US` | `US` | `symbol=AAPL`，exchange 通过 symbol search 或配置解析 |
-| `TSLA.US` | `TSLA.US` | `US` | `symbol=TSLA` |
-| `0700.HK` | `0700.HK` | `HK` | `symbol=0700&exchange=HKEX` |
-| `9988.HK` | `9988.HK` | `HK` | `symbol=9988&exchange=HKEX` |
-| `600519.CN` | `600519.CN` | `CN` | `symbol=600519&exchange=SSE` |
-| `000001.CN` | `000001.CN` | `CN` | `symbol=000001&exchange=SZSE` |
+| `AAPL`, `AAPL.US` | `AAPL.US` | `US` | `AAPL` |
+| `TSLA.US` | `TSLA.US` | `US` | `TSLA` |
+| `0700.HK` | `0700.HK` | `HK` | `0700.HK` |
+| `9988.HK` | `9988.HK` | `HK` | `9988.HK` |
+| `600519.CN` | `600519.CN` | `CN` | `600519.SS` |
+| `000001.CN` | `000001.CN` | `CN` | `000001.SZ` |
+| `7203.JP` | `7203.JP` | `JP` | `7203.T` |
 
 规则：
 
 1. 用户输入统一 trim、uppercase。
-2. 美股允许省略 `.US`，但港股和 A 股必须带后缀，避免数字代码歧义。
+2. 美股允许省略 `.US`，但港股、A 股和日股必须带后缀（`.HK` / `.CN` / `.JP`），避免数字代码歧义。日股代码当前仅支持 4 位数字。
 3. A 股 exchange 先按代码前缀推断，再通过 provider symbol search 校验。无法确认时返回候选列表，不直接添加 watchlist。
 4. 数据库永远保存 canonical symbol，不保存用户原始输入作为主键。
 5. provider symbol、exchange、mic_code 作为 quote metadata 保存，切换 provider 时可重新映射。
@@ -540,32 +542,31 @@ interface StockProviderAdapter {
 4. `provider_payload` 只保存排障必要字段，不保存完整 provider 原始响应，也不参与 UI 主展示字段。
 5. provider 错误必须转换为统一错误类型，例如 `rate_limited`、`not_found`、`market_not_supported`、`provider_unavailable`。
 
-### 8.3 Twelve Data Adapter
+### 8.3 Yahoo Finance Adapter
 
-MVP 实现 `twelve_data` adapter。
+当前实现 `yahoo_finance` adapter（`_shared/stocks/yahoo.ts`），免密钥。
 
 配置：
 
 ```text
-STOCK_PROVIDER=twelve_data
-TWELVE_DATA_API_KEY=<secret>
+STOCK_PROVIDER=yahoo_finance
 ```
 
 能力：
 
-1. 支持美股、港股、A 股 symbol search。
-2. 支持 quote 查询和批量刷新。
-3. 港股默认映射到 HKEX。
-4. A 股默认映射到 SSE 或 SZSE。
+1. 覆盖美股、港股、A 股、日股，单源 `v8/finance/chart` 接口。
+2. 将 canonical symbol 映射到 Yahoo symbol（US 无后缀、`.HK`、`.SS`/`.SZ`、`.T`），请求带浏览器 `User-Agent`。
+3. 用 `regularMarketPrice` 与 `chartPreviousClose` 计算 `change` / `changePercent`。
+4. `chart.error` 或缺少价格时抛错，由 `resolveStockQuotes` 回退到 stale 缓存。
 5. 返回结果写入统一 `stock_quotes` 表。
 
 验收方法：
 
-1. `normalize('AAPL.US')` 返回 `AAPL.US`。
-2. `normalize('0700.HK')` 返回 `0700.HK`，provider exchange 为 `HKEX`。
-3. `normalize('600519.CN')` 返回 `600519.CN`，provider exchange 为 `SSE`。
-4. `normalize('000001.CN')` 返回 `000001.CN`，provider exchange 为 `SZSE`。
-5. `getQuote()` 对上述四个 symbol 返回统一 `StockQuote`，即使 provider 字段名不同。
+1. `getQuote('AAPL.US')` 请求 `/v8/finance/chart/AAPL`。
+2. `getQuote('0700.HK')` 请求 `/v8/finance/chart/0700.HK`。
+3. `getQuote('600519.CN')` 请求 `.SS`，`000001.CN` 请求 `.SZ`。
+4. `getQuote('7203.JP')` 请求 `/v8/finance/chart/7203.T`。
+5. 上述 symbol 返回统一 `StockQuote`，含价格、change% 与 marketTime。
 
 ### 8.4 Provider 切换标准
 

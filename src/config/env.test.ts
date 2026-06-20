@@ -28,7 +28,7 @@ describe('parseEnv', () => {
       value: {
         supabaseUrl: 'https://example.supabase.co',
         supabasePublishableKey: 'publishable-key',
-        stockProvider: 'twelve_data',
+        stockProvider: 'yahoo_finance',
         stockQuoteCacheTtlSeconds: 60
       }
     });

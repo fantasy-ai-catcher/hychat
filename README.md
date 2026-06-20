@@ -12,7 +12,7 @@ Implemented MVP:
 4. Canonical stock symbols such as `AAPL.US`, `0700.HK`, `600519.CN`.
 5. Supabase schema migration with RLS and explicit Data API grants.
 6. Supabase email-OTP Auth with invite codes and local session persistence. Your identity is your email; your display name is a separate, changeable label.
-7. Stock quote Edge Function with current quote cache and Twelve Data adapter.
+7. Stock quote Edge Function with current quote cache and a keyless Yahoo Finance adapter (US, HK, China A-share, Japan).
 8. Open rooms: create rooms, discover all rooms with member counts, self-join any room, member listing, message history, and realtime message/watchlist updates.
 9. Shared room watchlist and manual quote refresh.
 
@@ -22,7 +22,6 @@ Implemented MVP:
 2. pnpm 10.
 3. Supabase CLI for local database and Edge Function work.
 4. A Supabase project or local Supabase stack.
-5. A Twelve Data API key for stock quotes.
 
 ## Setup
 
@@ -36,14 +35,15 @@ Fill in:
 ```text
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
-STOCK_PROVIDER=twelve_data
+STOCK_PROVIDER=yahoo_finance
 STOCK_QUOTE_CACHE_TTL_SECONDS=60
 ```
 
-Edge Function secrets are configured in Supabase, not exposed to the terminal client:
+Stock quotes use Yahoo Finance's keyless endpoint, so no provider API key is
+required. Optionally tune the Edge Function cache TTL:
 
 ```bash
-supabase secrets set TWELVE_DATA_API_KEY=... STOCK_QUOTE_CACHE_TTL_SECONDS=60
+supabase secrets set STOCK_QUOTE_CACHE_TTL_SECONDS=60
 ```
 
 Supabase automatically injects `SUPABASE_URL` and service credentials for deployed functions. Do not place a service role key in terminal client env files.
@@ -167,7 +167,9 @@ All public app tables enable RLS. Tables exposed through the Data API include ex
 
 ## Stock Quotes
 
-MVP provider: Twelve Data.
+Provider: Yahoo Finance (keyless `v8/finance/chart`). Symbols cover US
+(`AAPL`), Hong Kong (`0700.HK`), China A-shares (`600519.CN`), and Japan
+(`7203.JP`).
 
 HyChat stores only the current quote cache:
 

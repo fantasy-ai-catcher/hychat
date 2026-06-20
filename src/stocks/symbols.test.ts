@@ -73,10 +73,42 @@ describe('parseCanonicalSymbol', () => {
     });
   });
 
+  it('maps Tokyo symbols to TSE', () => {
+    expect(parseCanonicalSymbol('7203.JP')).toEqual({
+      success: true,
+      value: {
+        canonicalSymbol: '7203.JP',
+        code: '7203',
+        market: 'JP',
+        providerSymbol: '7203',
+        providerExchange: 'TSE',
+        micCode: 'XTKS'
+      }
+    });
+  });
+
+  it('rejects malformed Tokyo symbols', () => {
+    expect(parseCanonicalSymbol('72030.JP')).toEqual({
+      success: false,
+      error: 'Invalid JP symbol: 72030'
+    });
+  });
+
+  it('canonicalizes Hong Kong codes to zero-padded 4-digit form', () => {
+    expect(parseCanonicalSymbol('700.HK')).toMatchObject({
+      success: true,
+      value: { canonicalSymbol: '0700.HK', code: '0700', providerSymbol: '0700' }
+    });
+    expect(parseCanonicalSymbol('07709.HK')).toMatchObject({
+      success: true,
+      value: { canonicalSymbol: '7709.HK', code: '7709', providerSymbol: '7709' }
+    });
+  });
+
   it('rejects numeric symbols without a market suffix', () => {
     expect(parseCanonicalSymbol('0700')).toEqual({
       success: false,
-      error: 'Numeric symbols must include a market suffix such as .HK or .CN'
+      error: 'Numeric symbols must include a market suffix such as .HK, .CN, or .JP'
     });
   });
 

@@ -1,4 +1,4 @@
-export type EdgeMarket = 'US' | 'HK' | 'CN';
+export type EdgeMarket = 'US' | 'HK' | 'CN' | 'JP';
 
 export type EdgeNormalizedSymbol = {
   canonicalSymbol: `${string}.${EdgeMarket}`;
@@ -48,16 +48,30 @@ export function parseEdgeCanonicalSymbol(input: string): EdgeNormalizedSymbol {
     throw new Error('Numeric symbols must include a market suffix');
   }
 
-  if (!['US', 'HK', 'CN'].includes(market)) {
+  if (!['US', 'HK', 'CN', 'JP'].includes(market)) {
     throw new Error(`Unsupported market: ${marketPart}`);
   }
 
-  if (market === 'HK') {
+  if (market === 'JP') {
     return {
-      canonicalSymbol: `${code}.HK`,
+      canonicalSymbol: `${code}.JP`,
       code,
       market,
       providerSymbol: code,
+      providerExchange: 'TSE',
+      micCode: 'XTKS'
+    };
+  }
+
+  if (market === 'HK') {
+    // Canonicalize to Yahoo's zero-padded 4-digit form (0700, 7709), idempotent
+    // with the client so cache keys agree.
+    const hkCode = (code.replace(/^0+/, '') || '0').padStart(4, '0');
+    return {
+      canonicalSymbol: `${hkCode}.HK`,
+      code: hkCode,
+      market,
+      providerSymbol: hkCode,
       providerExchange: 'HKEX',
       micCode: 'XHKG'
     };

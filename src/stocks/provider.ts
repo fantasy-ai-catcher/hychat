@@ -1,6 +1,6 @@
 import type { ISODateTime } from '../types.js';
 
-export type Market = 'US' | 'HK' | 'CN';
+export type Market = 'US' | 'HK' | 'CN' | 'JP';
 
 export type CanonicalSymbol = `${string}.${Market}`;
 

@@ -838,6 +838,75 @@ describe('createChatSession', () => {
     );
   });
 
+  it('requires an active room for /stock', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    await signIn(session);
+    const snapshot = await session.handleLine('/stock AAPL.US');
+
+    expect(snapshot.statusText).toBe(
+      'Join a room first with /join or create one with /create.'
+    );
+  });
+
+  it('adds the symbol to the shared room watchlist after /stock', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service: { ...service, listWatchlist: async () => [] } });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    const snapshot = await session.handleLine('/stock AAPL.US');
+
+    expect(snapshot.statusText).toBe('Watching AAPL.US.');
+    expect(calls).toContainEqual({
+      method: 'addWatchSymbol',
+      args: [{ roomId: 'room-1', symbol: 'AAPL.US', addedBy: 'user-1' }]
+    });
+  });
+
+  it('reports the failure reason when /stock cannot load a quote', async () => {
+    const { service } = createService();
+    const session = createChatSession({
+      service: {
+        ...service,
+        listWatchlist: async () => [],
+        getQuotes: async () => ({
+          quotes: [],
+          failed: [{ symbol: 'AAPL.US', reason: 'rate_limited' }]
+        })
+      }
+    });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    const snapshot = await session.handleLine('/stock AAPL.US');
+
+    expect(snapshot.statusText).toBe('AAPL.US: rate_limited');
+  });
+
+  it('gives a friendly hint when /stock hits an unknown symbol', async () => {
+    const { service } = createService();
+    const session = createChatSession({
+      service: {
+        ...service,
+        listWatchlist: async () => [],
+        getQuotes: async () => ({
+          quotes: [],
+          failed: [{ symbol: 'APPL.US', reason: 'symbol_not_found' }]
+        })
+      }
+    });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    const snapshot = await session.handleLine('/stock APPL.US');
+
+    expect(snapshot.statusText).toBe(
+      'No quote for APPL.US. Check the symbol — e.g. AAPL.US, 0700.HK, 600519.CN, 7203.JP.'
+    );
+  });
+
   it('emits a fresh snapshot when realtime messages arrive', async () => {
     const { service } = createService();
     let messageHandler:

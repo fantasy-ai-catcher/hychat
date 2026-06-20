@@ -19,7 +19,7 @@ describe('createHychatSupabaseClient', () => {
       {
         supabaseUrl: 'https://example.supabase.co',
         supabasePublishableKey: 'sb_publishable_test',
-        stockProvider: 'twelve_data',
+        stockProvider: 'yahoo_finance',
         stockQuoteCacheTtlSeconds: 60
       },
       { authStorage: storage }

@@ -47,7 +47,8 @@ src/
 │                             (postgres_changes for messages / watchlist / members / quotes;
 │                             presence for online/offline + broadcast for typing & focus)
 └── stocks/
-    ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN)
+    ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN, 7203.JP)
+    ├── format.ts             [L1] quote display formatting (price/percent/color + /stock status line)
     ├── cache.ts              [L1] quote cache TTL policy
     └── provider.ts           stock provider adapter contract / types
 
@@ -57,7 +58,8 @@ supabase/
 └── functions/
     ├── get-stock-quotes/
     │   └── index.ts          quote Edge Function (JWT + active-profile check, throttle)
-    └── _shared/stocks/       shared cache / provider / twelve-data adapter for functions
+    └── _shared/stocks/       shared cache / provider / yahoo adapter for functions
+                              (yahoo.ts: keyless Yahoo v8/chart, US/HK/CN/JP)
 
 scripts/
 ├── dev-login.mjs             pre-log-in test accounts (no email/OTP) into --profile files

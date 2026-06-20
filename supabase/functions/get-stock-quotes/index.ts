@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 import { resolveStockQuotes, type StockQuoteCacheStore } from '../_shared/stocks/cache.ts';
-import { createTwelveDataProvider } from '../_shared/stocks/twelve-data.ts';
+import { createYahooProvider } from '../_shared/stocks/yahoo.ts';
 
 type RequestBody = {
   symbols?: string[];
@@ -16,9 +16,9 @@ Deno.serve(async (request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    const apiKey = Deno.env.get('TWELVE_DATA_API_KEY');
 
-    if (!supabaseUrl || !serviceRoleKey || !anonKey || !apiKey) {
+    // Yahoo's quote endpoint is keyless, so no provider API key is required.
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
       return Response.json({ error: 'missing_server_configuration' }, { status: 500 });
     }
 
@@ -129,7 +129,7 @@ Deno.serve(async (request) => {
       symbols: body.symbols,
       force: body.force ?? false,
       cache,
-      provider: createTwelveDataProvider(apiKey),
+      provider: createYahooProvider(),
       now: new Date(),
       ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '60'),
       forceMinIntervalSeconds: Number(

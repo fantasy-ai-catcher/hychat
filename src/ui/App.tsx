@@ -8,6 +8,11 @@ import {
 } from '../app/chat-session.js';
 import { resolveProfileColor } from '../app/profile-colors.js';
 import {
+  formatQuoteChangePercent,
+  formatQuotePrice,
+  quoteChangeColor
+} from '../stocks/format.js';
+import {
   applyEditorAction,
   emptyBuffer,
   type EditorAction
@@ -407,15 +412,24 @@ export function TopInfoPanel({
       </Text>
       <Text>
         Stocks:{' '}
-        {symbols.length > 0
-          ? symbols
-              .map((symbol) => {
-                const quote = state.quotesBySymbol[symbol];
-                const price = quote?.price === undefined ? '-' : quote.price;
-                return `${symbol} ${price} ${formatQuoteChange(quote?.changePercent)}`;
-              })
-              .join(' | ')
-          : '-'}
+        {symbols.length > 0 ? (
+          symbols.map((symbol, index) => {
+            const quote = state.quotesBySymbol[symbol];
+            return (
+              <React.Fragment key={symbol}>
+                {index > 0 ? <Text dimColor> | </Text> : null}
+                <Text>
+                  {symbol} {formatQuotePrice(quote?.price)}{' '}
+                </Text>
+                <Text color={quoteChangeColor(quote?.changePercent)}>
+                  {formatQuoteChangePercent(quote?.changePercent)}
+                </Text>
+              </React.Fragment>
+            );
+          })
+        ) : (
+          '-'
+        )}
       </Text>
     </Box>
   );
@@ -494,28 +508,16 @@ export type StatusBarProps = {
   userRole?: string;
 };
 
+// Bottom bar is just identity + room + connection. Members and stocks live in
+// the top panel, so they are intentionally not repeated here.
 export function StatusBar({ state, userLabel, userRole }: StatusBarProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
-  const roomId = activeRoom?.id;
-  const members = roomId ? state.membersByRoom[roomId] ?? [] : [];
-  const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
-  const memberSummary = summarizeItems(
-    members.map((member) => member.displayName ?? member.userId),
-    2
-  );
-  const stockSummary = summarizeItems(
-    symbols.map((symbol) => {
-      const quote = state.quotesBySymbol[symbol];
-      return `${symbol} ${formatQuoteChange(quote?.changePercent)}`;
-    }),
-    1
-  );
 
   return (
     <Box flexDirection="row" flexShrink={0}>
       <Text dimColor>
         {userLabel ?? '-'} {userRole ?? '-'} | room {activeRoom?.name ?? '-'} |{' '}
-        {state.connectionStatus} | members {memberSummary} | stocks {stockSummary}
+        {state.connectionStatus}
       </Text>
     </Box>
   );
@@ -655,23 +657,6 @@ export function resolveEditorAction(value: string, key: InputKey): EditorAction 
   return { type: 'insert', text: value };
 }
 
-function formatQuoteChange(changePercent: number | undefined): string {
-  if (changePercent === undefined) {
-    return '-';
-  }
-
-  return `${changePercent > 0 ? '+' : ''}${changePercent}%`;
-}
-
-function summarizeItems(items: string[], visibleCount: number): string {
-  if (items.length === 0) {
-    return '-';
-  }
-
-  const visible = items.slice(0, visibleCount).join(', ');
-  const hiddenCount = items.length - visibleCount;
-  return hiddenCount > 0 ? `${visible} +${hiddenCount}` : visible;
-}
 
 function getStatusHeight(text: string): number {
   return Math.min(Math.max(text.split('\n').length, 1), 8);
