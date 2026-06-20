@@ -5,9 +5,9 @@ import {
   App,
   AppShell,
   InputComposer,
+  isPanelToggle,
   MessageViewport,
   resolveEditorAction,
-  resolveTopPanelToggle,
   StatusBar,
   StatusText,
   TopInfoPanel
@@ -653,22 +653,20 @@ describe('resolveEditorAction', () => {
   });
 });
 
-describe('resolveTopPanelToggle', () => {
-  type Key = Parameters<typeof resolveTopPanelToggle>[1];
+describe('isPanelToggle', () => {
+  type Key = Parameters<typeof isPanelToggle>[1];
 
   function key(overrides: Partial<Key> = {}): Key {
     return { ctrl: false, shift: false, meta: false, ...overrides } as Key;
   }
 
-  it('maps Ctrl+S to the stocks toggle and Ctrl+P to the members toggle', () => {
-    expect(resolveTopPanelToggle('s', key({ ctrl: true }))).toBe('stocks');
-    expect(resolveTopPanelToggle('p', key({ ctrl: true }))).toBe('members');
+  it('matches Ctrl+S', () => {
+    expect(isPanelToggle('s', key({ ctrl: true }))).toBe(true);
   });
 
-  it('ignores the same letters without Ctrl, and other Ctrl keys', () => {
-    expect(resolveTopPanelToggle('s', key())).toBeUndefined();
-    expect(resolveTopPanelToggle('p', key())).toBeUndefined();
-    expect(resolveTopPanelToggle('m', key({ ctrl: true }))).toBeUndefined();
+  it('ignores plain s and other Ctrl keys', () => {
+    expect(isPanelToggle('s', key())).toBe(false);
+    expect(isPanelToggle('p', key({ ctrl: true }))).toBe(false);
   });
 });
 

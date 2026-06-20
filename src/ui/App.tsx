@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import stringWidth from 'string-width';
 
@@ -30,13 +30,16 @@ import {
   buildWelcomeLines,
   computeMemberStatuses,
   createInitialAppState,
-  formatActivityLine,
-  formatBeijingTime,
   layoutMemberGrid,
   mergeChatTimeline,
   resolveShellView
 } from './state.js';
+import { buildRenderLines, sliceWindow } from './scroll.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
+import { isMouseSequence, watchTerminalMouse } from './terminal-mouse.js';
+
+// Rows the mouse wheel scrolls per notch.
+const WHEEL_STEP = 3;
 
 export type AppProps = {
   state?: AppState;
@@ -120,8 +123,36 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
   const [busyTick, setBusyTick] = useState(0);
   const [busyStartedAt, setBusyStartedAt] = useState<number | undefined>();
   const [showTimestamps, setShowTimestamps] = useState(false);
-  const [showStocks, setShowStocks] = useState(true);
-  const [showMembers, setShowMembers] = useState(true);
+  const [showPanel, setShowPanel] = useState(true);
+  // Rows scrolled up from the latest message (0 == pinned to the bottom).
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  // AppShell knows the real wrapped-line count, so it writes the scroll ceiling
+  // here during render; the handlers clamp against it so we never scroll past
+  // the top of the history.
+  const maxOffsetRef = useRef(0);
+  const scrollUp = (step: number) =>
+    setScrollOffset((current) => Math.min(maxOffsetRef.current, current + step));
+  const scrollDown = (step: number) =>
+    setScrollOffset((current) => Math.max(0, current - step));
+
+  // Mouse wheel scrolls the chat history. Enabling reporting captures native
+  // text selection, so users hold Option/Shift to select (see terminal-mouse).
+  useEffect(() => {
+    return watchTerminalMouse((direction) => {
+      if (direction === 'up') {
+        scrollUp(WHEEL_STEP);
+      } else {
+        scrollDown(WHEEL_STEP);
+      }
+    });
+  }, []);
+
+  // Jump back to the latest when switching rooms.
+  const activeRoomId = (fixedState ?? snapshot.state).activeRoomId;
+  useEffect(() => {
+    setScrollOffset(0);
+  }, [activeRoomId]);
 
   useEffect(() => {
     if (!snapshot.isBusy) {
@@ -168,15 +199,25 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       return;
     }
 
-    // Ctrl+S / Ctrl+P show/hide the Stocks / Members sections of the top panel.
-    // (Ctrl+M is unusable here — it is the same byte as Enter.)
-    const toggle = resolveTopPanelToggle(value, key);
-    if (toggle === 'stocks') {
-      setShowStocks((current) => !current);
+    // Ctrl+S shows/hides the whole top panel (members + stocks).
+    if (isPanelToggle(value, key)) {
+      setShowPanel((current) => !current);
       return;
     }
-    if (toggle === 'members') {
-      setShowMembers((current) => !current);
+
+    // Mouse-wheel escape sequences also reach stdin; the terminal-mouse watcher
+    // handles scrolling, so never let the bytes enter the input.
+    if (isMouseSequence(value)) {
+      return;
+    }
+
+    // PageUp/PageDown scroll the chat history a screenful at a time.
+    if (key.pageUp) {
+      scrollUp(scrollPage());
+      return;
+    }
+    if (key.pageDown) {
+      scrollDown(scrollPage());
       return;
     }
 
@@ -190,6 +231,7 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
     if (key.return) {
       const submitted = buffer.value;
       setBuffer(emptyBuffer);
+      setScrollOffset(0);
       void submitLine(submitted);
       return;
     }
@@ -234,8 +276,9 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
       cursor={buffer.cursor}
       cursorVisible={cursorVisible}
       showTimestamps={showTimestamps}
-      showStocks={showStocks}
-      showMembers={showMembers}
+      showPanel={showPanel}
+      scrollOffset={scrollOffset}
+      maxOffsetRef={maxOffsetRef}
       height={terminalRows}
       width={terminalColumns}
     />
@@ -257,8 +300,10 @@ type AppShellProps = {
   cursor?: number;
   cursorVisible: boolean;
   showTimestamps?: boolean;
-  showStocks?: boolean;
-  showMembers?: boolean;
+  showPanel?: boolean;
+  scrollOffset?: number;
+  // Written during render with the current scroll ceiling so App can clamp.
+  maxOffsetRef?: { current: number };
   height?: number;
   width?: number;
 };
@@ -278,8 +323,9 @@ export function AppShell({
   cursor,
   cursorVisible,
   showTimestamps,
-  showStocks = true,
-  showMembers = true,
+  showPanel = true,
+  scrollOffset = 0,
+  maxOffsetRef,
   height,
   width
 }: AppShellProps) {
@@ -292,13 +338,25 @@ export function AppShell({
   const terminalWidth = width ?? process.stdout.columns ?? 80;
   const watchlist = buildWatchlistTable(selectWatchlistQuotes(state, roomId));
   const memberGrid = layoutMemberGrid(selectMembers(state, roomId, currentUserId, currentUserActive), terminalWidth);
-  const topHeight = topPanelHeight({ watchlist, memberGrid, showStocks, showMembers });
+  const topHeight = showPanel
+    ? topPanelHeight({ watchlist, memberGrid, showStocks: true, showMembers: true })
+    : 0;
   const statusHeight = getStatusHeight(statusText);
   // The composer is 2 border rows plus one row per input line, so multiline
   // input grows the bottom region (and shrinks the chat) instead of overflowing.
   const inputLines = input.split('\n').length;
   const bottomHeight = statusHeight + 3 + inputLines;
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
+
+  // The chat scrolls by pre-wrapped line, so the ceiling depends on the real
+  // wrapped line count, not the message count. Report it up so the offset stays
+  // clamped, and derive how many rows are currently hidden below the viewport.
+  const totalLines = buildRenderLines(messages, terminalWidth, !!showTimestamps).length;
+  const maxOffset = Math.max(0, totalLines - chatHeight);
+  const hiddenBelow = Math.min(Math.max(0, scrollOffset), maxOffset);
+  if (maxOffsetRef) {
+    maxOffsetRef.current = maxOffset;
+  }
 
   if (resolveShellView(state) === 'welcome') {
     const welcomeHeight = Math.max(shellHeight - statusHeight - 2 - inputLines, 4);
@@ -321,20 +379,22 @@ export function AppShell({
 
   return (
     <Box flexDirection="column" height={shellHeight}>
-      {TopInfoPanel({
-        state,
-        userLabel,
-        userRole,
-        currentUserId,
-        currentUserActive,
-        showStocks,
-        showMembers,
-        terminalWidth,
-        height: topHeight
-      })}
+      {showPanel
+        ? TopInfoPanel({
+            state,
+            userLabel,
+            userRole,
+            currentUserId,
+            currentUserActive,
+            terminalWidth,
+            height: topHeight
+          })
+        : null}
       {MessageViewport({
-        messages: messages.slice(-chatHeight),
+        messages,
+        width: terminalWidth,
         height: chatHeight,
+        scrollOffset,
         showTimestamps
       })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
@@ -345,7 +405,12 @@ export function AppShell({
           cursor={cursor}
           cursorVisible={cursorVisible}
         />
-        <StatusBar state={state} userLabel={userLabel} userRole={userRole} />
+        <StatusBar
+          state={state}
+          userLabel={userLabel}
+          userRole={userRole}
+          scrolledLines={hiddenBelow}
+        />
       </Box>
     </Box>
   );
@@ -471,9 +536,11 @@ export type TopInfoPanelProps = {
   height?: number;
 };
 
-// ● focused tab, ◐ connected but unfocused, ○ disconnected/offline.
+// ● focused tab, ◉ connected but unfocused, ○ disconnected/offline. The trio is
+// weight-matched on purpose — the half-circle ◐ rendered larger than ●/○ in
+// many fonts and looked uneven in the column.
 function memberDot(status: MemberView['status']): string {
-  return status === 'active' ? '●' : status === 'online' ? '◐' : '○';
+  return status === 'active' ? '●' : status === 'online' ? '◉' : '○';
 }
 
 // Cap a single member cell so one long name can't stretch the whole grid.
@@ -576,42 +643,53 @@ export function TopInfoPanel({
 
 export type MessageViewportProps = {
   messages: NonNullable<AppState['messagesByRoom'][string]>;
+  width?: number;
+  scrollOffset?: number;
   showTimestamps?: boolean;
   height: number;
 };
 
-export function MessageViewport({ messages, height, showTimestamps }: MessageViewportProps) {
+export function MessageViewport({
+  messages,
+  width,
+  scrollOffset = 0,
+  height,
+  showTimestamps
+}: MessageViewportProps) {
+  const innerWidth = width ?? process.stdout.columns ?? 80;
+  // Pre-wrap to one row per line, then slice the window so older history is
+  // reachable by scrolling instead of being dropped off the top.
+  const allLines = buildRenderLines(messages, innerWidth, !!showTimestamps);
+  const { lines } = sliceWindow(allLines, height, scrollOffset);
+
   return (
     <Box flexDirection="column" height={height} flexGrow={1} overflow="hidden">
-      {messages.length === 0 ? (
+      {lines.length === 0 ? (
         <Text dimColor>No messages</Text>
       ) : (
-        messages.map((message) => (
-          <Box
-            key={message.id}
-            flexDirection="row"
-            // Room-activity notes sit centered, set apart from left-aligned chat.
-            justifyContent={message.kind === 'system' ? 'center' : 'flex-start'}
-          >
-            {showTimestamps && (
-              <Text color="gray" dimColor>
-                {formatBeijingTime(message.createdAt)}{' '}
+        lines.map((line, index) =>
+          line.kind === 'system' ? (
+            // Room-activity note (joined/left/watchlist change): centered + dim.
+            <Box key={index} justifyContent="center">
+              <Text dimColor>
+                {line.timestamp ?? ''}
+                {line.text}
               </Text>
-            )}
-            {message.kind === 'system' ? (
-              // Room-activity line (joined/left/watchlist change): a dim note,
-              // visually distinct from chat. See formatActivityLine.
-              <Text dimColor>· {formatActivityLine(message)}</Text>
-            ) : (
-              <>
-                <Text color={resolveProfileColor(message.senderColor)}>
-                  {message.senderName ?? message.senderId}:
+            </Box>
+          ) : (
+            <Box key={index} flexDirection="row">
+              {line.timestamp ? (
+                <Text color="gray" dimColor>
+                  {line.timestamp}
                 </Text>
-                <Text> {message.body}</Text>
-              </>
-            )}
-          </Box>
-        ))
+              ) : null}
+              {line.senderLabel ? (
+                <Text color={resolveProfileColor(line.senderColor)}>{line.senderLabel} </Text>
+              ) : null}
+              <Text>{line.body}</Text>
+            </Box>
+          )
+        )
       )}
     </Box>
   );
@@ -658,11 +736,13 @@ export type StatusBarProps = {
   state: AppState;
   userLabel?: string;
   userRole?: string;
+  scrolledLines?: number;
 };
 
 // Bottom bar is just identity + room + connection. Members and stocks live in
-// the top panel, so they are intentionally not repeated here.
-export function StatusBar({ state, userLabel, userRole }: StatusBarProps) {
+// the top panel, so they are intentionally not repeated here. When the history
+// is scrolled up, it also shows how to jump back to the latest.
+export function StatusBar({ state, userLabel, userRole, scrolledLines = 0 }: StatusBarProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
 
   return (
@@ -671,6 +751,9 @@ export function StatusBar({ state, userLabel, userRole }: StatusBarProps) {
         {userLabel ?? '-'} {userRole ?? '-'} | room {activeRoom?.name ?? '-'} |{' '}
         {state.connectionStatus}
       </Text>
+      {scrolledLines > 0 ? (
+        <Text color="yellow"> ↑ {scrolledLines} more · PageDown/Enter for latest</Text>
+      ) : null}
     </Box>
   );
 }
@@ -744,24 +827,17 @@ function locateCaret(lines: string[][], caret: number): { line: number; column: 
 type InputKey = Parameters<Parameters<typeof useInput>[0]>[1];
 
 /**
- * Map a keypress to a top-panel section toggle: Ctrl+S → stocks, Ctrl+P →
- * members. Returns undefined for everything else. Ctrl+M is intentionally not
- * used — it is the same byte (CR) as Enter and can't be told apart from submit.
+ * True when the keypress is Ctrl+S, which shows/hides the whole top panel.
+ * Ctrl+M is intentionally avoided — it is the same byte (CR) as Enter and can't
+ * be told apart from submit.
  */
-export function resolveTopPanelToggle(
-  value: string,
-  key: InputKey
-): 'stocks' | 'members' | undefined {
-  if (!key.ctrl) {
-    return undefined;
-  }
-  if (value === 's') {
-    return 'stocks';
-  }
-  if (value === 'p') {
-    return 'members';
-  }
-  return undefined;
+export function isPanelToggle(value: string, key: InputKey): boolean {
+  return Boolean(key.ctrl) && value === 's';
+}
+
+// PageUp/PageDown move a screenful of chat rows at a time.
+function scrollPage(): number {
+  return Math.max(1, (process.stdout.rows ?? 24) - 8);
 }
 
 /**

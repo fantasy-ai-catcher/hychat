@@ -1169,7 +1169,7 @@ function resolveRoom(input: string, rooms: RoomSummary[]): RoomSummary {
 
 function memberStatusDot(status: MemberView['status']): string {
   if (status === 'active') return '●';
-  if (status === 'online') return '◐';
+  if (status === 'online') return '◉';
   return '○';
 }
 
@@ -1188,7 +1188,7 @@ function formatMemberList(members: MemberView[]): string {
   if (hiddenCount > 0) {
     lines.push(`  +${hiddenCount} more`);
   }
-  return `Members (${members.length}):\n${lines.join('\n')}\n● active  ◐ online  ○ away`;
+  return `Members (${members.length}):\n${lines.join('\n')}\n● active  ◉ online  ○ away`;
 }
 
 // StatusText renders at most 8 lines, so cap the list at 6 rooms.
