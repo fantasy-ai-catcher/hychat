@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-20
+
 ### Added
 - `pnpm release <patch|minor|major|x.y.z>`: one-command release that bumps the
   version, rolls the changelog, builds the Homebrew tarball + formula, pushes
