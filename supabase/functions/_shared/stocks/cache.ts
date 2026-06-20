@@ -10,6 +10,12 @@ export type StockQuoteCacheStore = {
   upsert(quote: CachedStockQuote): Promise<void>;
 };
 
+// Resolves Chinese display names for HK/CN symbols (Yahoo only has English).
+// Returns canonicalSymbol -> name; symbols it can't name are simply omitted.
+export type ChineseNameResolver = (
+  symbols: EdgeNormalizedSymbol[]
+) => Promise<Map<string, string>>;
+
 export type ResolveStockQuotesInput = {
   symbols: string[];
   force: boolean;
@@ -23,10 +29,14 @@ export type ResolveStockQuotesInput = {
   // instead). Both default to values safe for free-tier quotas.
   forceMinIntervalSeconds?: number;
   failureRetrySeconds?: number;
+  // Optional: when set, HK/CN symbols missing a Chinese name get one from here
+  // (fetched once and cached). Omitted in unit tests; wired to Tencent in prod.
+  nameResolver?: ChineseNameResolver;
 };
 
 export type ResolvedQuote = {
   symbol: string;
+  name?: string;
   price?: number;
   changePercent?: number;
   cacheStatus: 'hit' | 'refreshed' | 'stale';
@@ -120,6 +130,26 @@ export async function resolveStockQuotes(
     freshBySymbol.set(quote.canonicalSymbol, quote);
   }
 
+  // Chinese names are static, so only ask the resolver for HK/CN symbols that
+  // just refreshed and don't already have a Chinese name cached. Once a name is
+  // stored, it is reused on every later refresh without another lookup.
+  let chineseNames = new Map<string, string>();
+  if (input.nameResolver) {
+    const needNames = toFetch.filter(
+      (symbol) =>
+        (symbol.market === 'HK' || symbol.market === 'CN') &&
+        freshBySymbol.has(symbol.canonicalSymbol) &&
+        !hasChineseName(cachedBySymbol.get(symbol.canonicalSymbol)?.name)
+    );
+    if (needNames.length > 0) {
+      try {
+        chineseNames = await input.nameResolver(needNames);
+      } catch {
+        chineseNames = new Map();
+      }
+    }
+  }
+
   const upserts: Array<Promise<void>> = [];
   for (const symbol of toFetch) {
     const cached = cachedBySymbol.get(symbol.canonicalSymbol) ?? null;
@@ -128,6 +158,7 @@ export async function resolveStockQuotes(
     if (freshQuote) {
       const sanitized = sanitizeQuote({
         ...freshQuote,
+        name: resolveDisplayName(symbol, freshQuote, cached, chineseNames),
         cacheExpiresAt: getCacheExpiresAt(input.now, input.ttlSeconds),
         lastRefreshAttemptAt: input.now.toISOString(),
         updatedAt: input.now.toISOString()
@@ -155,6 +186,29 @@ export async function resolveStockQuotes(
   return { quotes, failed };
 }
 
+// True once a name contains CJK — our signal that a HK/CN row already holds a
+// Chinese name and needs no further Tencent lookup.
+function hasChineseName(name: string | undefined): boolean {
+  return name !== undefined && /[㐀-鿿]/.test(name);
+}
+
+// HK/CN: prefer a freshly fetched Chinese name, else a Chinese name already
+// cached, else Yahoo's English name. US/JP always keep Yahoo's name.
+function resolveDisplayName(
+  symbol: EdgeNormalizedSymbol,
+  fresh: CachedStockQuote,
+  cached: CachedStockQuote | null,
+  chineseNames: Map<string, string>
+): string | undefined {
+  if (symbol.market === 'HK' || symbol.market === 'CN') {
+    return (
+      chineseNames.get(symbol.canonicalSymbol) ??
+      (hasChineseName(cached?.name) ? cached?.name : fresh.name)
+    );
+  }
+  return fresh.name;
+}
+
 function getMsSinceAttempt(cached: CachedStockQuote | null, now: Date): number | null {
   if (!cached?.lastRefreshAttemptAt) {
     return null;
@@ -169,6 +223,7 @@ function toResolvedQuote(
 ): ResolvedQuote {
   return {
     symbol: quote.canonicalSymbol,
+    name: quote.name,
     price: quote.price,
     changePercent: quote.changePercent,
     cacheStatus

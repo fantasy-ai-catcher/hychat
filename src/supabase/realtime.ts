@@ -47,6 +47,7 @@ type MemberChange = {
 // One quote inside a batched server broadcast (see refresh-active-quotes).
 type BroadcastQuote = {
   symbol: string;
+  name?: string | null;
   price?: number | null;
   changePercent?: number | null;
   cacheStatus?: string;

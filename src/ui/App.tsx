@@ -8,9 +8,10 @@ import {
 } from '../app/chat-session.js';
 import { resolveProfileColor } from '../app/profile-colors.js';
 import {
-  formatQuoteChangePercent,
-  formatQuotePrice,
-  quoteChangeColor
+  buildWatchlistTable,
+  type WatchlistDirection,
+  type WatchlistQuote,
+  type WatchlistTable
 } from '../stocks/format.js';
 import {
   applyEditorAction,
@@ -262,7 +263,8 @@ export function AppShell({
     ? mergeChatTimeline(state.messagesByRoom[roomId] ?? [], state.activityByRoom[roomId] ?? [])
     : [];
   const shellHeight = Math.max(height ?? process.stdout.rows ?? 24, 12);
-  const topHeight = 5;
+  const watchlist = buildWatchlistTable(selectWatchlistQuotes(state, roomId));
+  const topHeight = topPanelHeight(watchlist);
   const statusHeight = getStatusHeight(statusText);
   // The composer is 2 border rows plus one row per input line, so multiline
   // input grows the bottom region (and shrinks the chat) instead of overflowing.
@@ -339,6 +341,49 @@ export function WelcomeScreen({ userLabel, height }: WelcomeScreenProps) {
   );
 }
 
+// Pulls a room's watched symbols + their latest quotes into the pure table
+// builder's input shape. Shared by AppShell (to size the header) and
+// TopInfoPanel (to render it).
+function selectWatchlistQuotes(
+  state: AppState,
+  roomId: string | undefined
+): WatchlistQuote[] {
+  if (!roomId) {
+    return [];
+  }
+  const symbols = state.watchlistByRoom[roomId] ?? [];
+  return symbols.map((symbol) => {
+    const quote = state.quotesBySymbol[symbol];
+    return {
+      symbol,
+      name: quote?.name,
+      price: quote?.price,
+      changePercent: quote?.changePercent
+    };
+  });
+}
+
+// Header box height = border (2) + title (1) + members (1) + stock lines. The
+// stock section is one line when empty ("Stocks: -"), otherwise a "Stocks"
+// label plus one line per visible row plus an optional "+N more" line.
+function topPanelHeight(table: WatchlistTable): number {
+  const stockLines =
+    table.rows.length === 0
+      ? 1
+      : 1 + table.rows.length + (table.hiddenCount > 0 ? 1 : 0);
+  return 4 + stockLines;
+}
+
+function directionColor(direction: WatchlistDirection): 'green' | 'red' | undefined {
+  if (direction === 'up') {
+    return 'green';
+  }
+  if (direction === 'down') {
+    return 'red';
+  }
+  return undefined;
+}
+
 export type TopInfoPanelProps = {
   state: AppState;
   userLabel?: string;
@@ -369,7 +414,7 @@ export function TopInfoPanel({
     : [];
   const visibleMembers = members.slice(0, 3);
   const hiddenMemberCount = members.length - visibleMembers.length;
-  const symbols = roomId ? state.watchlistByRoom[roomId] ?? [] : [];
+  const watchlist = buildWatchlistTable(selectWatchlistQuotes(state, roomId));
 
   return (
     <Box
@@ -414,27 +459,34 @@ export function TopInfoPanel({
           '-'
         )}
       </Text>
-      <Text>
-        Stocks:{' '}
-        {symbols.length > 0 ? (
-          symbols.map((symbol, index) => {
-            const quote = state.quotesBySymbol[symbol];
-            return (
-              <React.Fragment key={symbol}>
-                {index > 0 ? <Text dimColor> | </Text> : null}
-                <Text>
-                  {symbol} {formatQuotePrice(quote?.price)}{' '}
-                </Text>
-                <Text color={quoteChangeColor(quote?.changePercent)}>
-                  {formatQuoteChangePercent(quote?.changePercent)}
-                </Text>
-              </React.Fragment>
-            );
-          })
-        ) : (
-          '-'
-        )}
-      </Text>
+      {watchlist.rows.length === 0 ? (
+        <Text>Stocks: -</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Text>Stocks</Text>
+          {watchlist.rows.map((row) => (
+            <Box key={row.key} paddingLeft={2}>
+              <Box width={watchlist.labelWidth} flexShrink={0} marginRight={2}>
+                <Text wrap="truncate">{row.label}</Text>
+              </Box>
+              <Box
+                width={watchlist.priceWidth}
+                flexShrink={0}
+                marginRight={2}
+                justifyContent="flex-end"
+              >
+                <Text dimColor>{row.price}</Text>
+              </Box>
+              <Box width={watchlist.percentWidth} flexShrink={0} justifyContent="flex-end">
+                <Text color={directionColor(row.direction)}>{row.percent}</Text>
+              </Box>
+            </Box>
+          ))}
+          {watchlist.hiddenCount > 0 ? (
+            <Text dimColor>{`  +${watchlist.hiddenCount} more`}</Text>
+          ) : null}
+        </Box>
+      )}
     </Box>
   );
 }

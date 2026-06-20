@@ -441,11 +441,35 @@ describe('App', () => {
 
     const panel = TopInfoPanel({ state, userLabel: 'liudong', userRole: 'admin', height: 7 });
     const textElements = collectTextElements(panel);
-    const up = textElements.find((element) => collectText(element) === '+1.20%');
-    const down = textElements.find((element) => collectText(element) === '-0.50%');
+    const up = textElements.find((element) => collectText(element) === '▲ 1.20%');
+    const down = textElements.find((element) => collectText(element) === '▼ 0.50%');
 
     expect(up?.props.color).toBe('green');
     expect(down?.props.color).toBe('red');
+  });
+
+  it('renders the shortname instead of the symbol code when known', () => {
+    const state: AppState = {
+      rooms: [{ id: 'room-1', name: 'Friends' }],
+      activeRoomId: 'room-1',
+      messagesByRoom: {},
+      membersByRoom: {},
+      onlineByRoom: {},
+      activeByRoom: {},
+      typingByRoom: {},
+      activityByRoom: {},
+      watchlistByRoom: { 'room-1': ['0700.HK'] },
+      quotesBySymbol: {
+        '0700.HK': { symbol: '0700.HK', name: '腾讯控股', price: 300, changePercent: 1, cacheStatus: 'hit' }
+      },
+      connectionStatus: 'connected'
+    };
+
+    const panel = TopInfoPanel({ state, userLabel: 'liudong', userRole: 'admin', height: 7 });
+    const text = collectText(panel);
+
+    expect(text).toContain('腾讯控股');
+    expect(text).not.toContain('0700.HK');
   });
 
   it('renders message sender names with their profile color', () => {
