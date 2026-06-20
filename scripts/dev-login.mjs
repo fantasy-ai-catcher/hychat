@@ -153,10 +153,13 @@ async function setupProfile(profile, { url, publishableKey, serviceKey }) {
   if (!userId) throw new Error(`Could not create or find auth user for ${email}`);
 
   // 2. Profile row (display name = profile name). service_role bypasses RLS.
+  // Don't write display_color: omitting it preserves a color the user picked in
+  // a previous session, while a brand-new row still gets the column default
+  // ('white'). Including it here reset the color to white on every re-login.
   const { error: upsertError } = await admin
     .from('profiles')
     .upsert(
-      { id: userId, display_name: profile, display_color: 'white', role: 'member', status: 'active' },
+      { id: userId, display_name: profile, role: 'member', status: 'active' },
       { onConflict: 'id' }
     );
   if (upsertError) throw new Error(`Profile upsert failed for ${profile}: ${upsertError.message}`);
