@@ -103,7 +103,7 @@ mkdir -p ~/.config/hychat
 cat > ~/.config/hychat/.env <<'EOF'
 SUPABASE_URL=https://<your-project-ref>.supabase.co
 SUPABASE_PUBLISHABLE_KEY=<your-supabase-publishable-key>
-STOCK_PROVIDER=twelve_data
+STOCK_PROVIDER=yahoo_finance
 STOCK_QUOTE_CACHE_TTL_SECONDS=60
 EOF
 ```

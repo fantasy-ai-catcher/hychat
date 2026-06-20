@@ -608,7 +608,7 @@ STOCK_PROVIDER=yahoo_finance
 
 切换触发条件：
 
-1. Twelve Data 免费/付费额度无法满足 watchlist 刷新。
+1. 当前 provider（Yahoo Finance）限流、封 IP 或接口变更，无法满足 watchlist 刷新。
 2. 用户明确要求港股/A 股盘中实时行情。
 3. 需要 provider 不支持的市场数据，例如更完整的财务指标或 Level 1/Level 2 实时行情。
 4. provider SLA 或稳定性无法满足使用。
@@ -855,7 +855,7 @@ pnpm test
 7. 实现 Presence 和 typing。
 8. 实现 watchlist 表、canonical symbol 和命令。
 9. 实现 Stock Provider adapter contract。
-10. 实现 Twelve Data adapter 和手动刷新。
+10. 实现股票 provider adapter（当前为 Yahoo Finance）和手动刷新。
 11. 实现按需刷新，并把 Cron 作为可选缓存预刷新和孤儿缓存清理。
 12. 补齐测试和端到端验收脚本。
 
@@ -863,7 +863,7 @@ pnpm test
 
 1. 已完成 Node.js TypeScript 项目骨架、环境变量解析、命令解析、canonical symbol、quote cache policy。
 2. 已完成 Supabase migration、RLS policy、清理函数、邮箱 OTP 登录（email OTP + `ensure_profile` RPC），显示名与身份解耦、可改（`set_display_name`，`/name`）。
-3. 已完成 `get-stock-quotes` Edge Function（含 JWT 与 active profile 校验、force 节流、失败退避）、Twelve Data adapter 和当前报价缓存。
+3. 已完成 `get-stock-quotes` Edge Function（含 JWT 与 active profile 校验、force 节流、失败退避）、Yahoo Finance adapter 和当前报价缓存。
 4. 已完成 Ink terminal UI（顶部 info panel 布局）、消息历史、Realtime postgres_changes 实时收发（消息、watchlist、quote，方案 A）、本地 session 持久化和 `--profile` 多账号（外加 `scripts/dev-login.mjs` / `pnpm dev:tmux` 免 OTP 本地多账号测试）。
 5. 已完成 profile 颜色（`/color` 系列命令、彩色成员列表和消息显示名）。
 6. 已完成开放房间：`list_rooms_with_counts()` 发现、`join_room()` 自助加入；邀请码改为只发全局账号注册码（`create_invite_code()`、`/invite-code list|revoke`，已移除 `/invite` 和房间码）；`/logout confirm` 二次确认、消息频率限制 trigger。

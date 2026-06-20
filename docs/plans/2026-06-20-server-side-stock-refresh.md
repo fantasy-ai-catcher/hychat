@@ -111,9 +111,12 @@ client realtime: .on('broadcast', {event:'quotes'}) → apply quotes-updated
   - `realtime.test`: broadcast `quotes` subscription wiring.
 - **Layer 3 (migration + edge deploy):** smoke only. Two clients in a room with
   a watchlist; observe quotes auto-update with nobody touching `/refresh`, and
-  stop when all leave. **First smoke check: confirm v7 works from Supabase's edge
-  egress IP** (the API was verified from a local IP; the datacenter IP may be
-  throttled differently).
+  stop when all leave.
+  - **VERIFIED (2026-06-20):** end-to-end smoke run passed against the remote
+    project. Yahoo v7 batch works from Supabase's edge egress IP (cookie+crumb
+    auth succeeds there); cron tick → batch fetch → per-room broadcast →
+    clients see quotes auto-update while present, and refresh stops once all
+    members leave the room.
 
 ## Manual / one-time setup (cannot be committed)
 
