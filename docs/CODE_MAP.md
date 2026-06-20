@@ -26,6 +26,10 @@ src/
 │   ├── hychat-service.ts     [L3] all Supabase calls: auth/OTP, ensureProfile/setDisplayName,
 │   │                         rooms (listRoomsWithCounts/createRoom/joinRoom/leaveRoom), messages,
 │   │                         members, invite codes, quotes, touchPresence (heartbeat_presence RPC)
+│   ├── update-check.ts       [L1] startup version gate: fetch latest GitHub release,
+│   │                         compare semver, block launch + print `brew update && brew
+│   │                         upgrade hychat` when outdated or check fails
+│   │                         (HYCHAT_SKIP_UPDATE_CHECK bypass; runUpdateGate is the shell)
 │   ├── session-storage.ts    local session file persistence + --profile paths
 │   ├── profile-colors.ts     [L1] color palette + helpers
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
