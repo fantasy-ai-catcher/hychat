@@ -83,6 +83,21 @@ const TYPING_BROADCAST_EVENT = 'typing';
 const FOCUS_BROADCAST_EVENT = 'focus';
 const QUOTES_BROADCAST_EVENT = 'quotes';
 
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+
+// A channel that drops into one of these states will not rejoin on its own here,
+// stranding the client with no messages and no presence — so we rebuild it.
+const UNHEALTHY_STATUSES = new Set(['CHANNEL_ERROR', 'TIMED_OUT']);
+
+// Exponential backoff for rebuilding a dropped realtime channel, capped so a
+// long outage still retries roughly twice a minute. Exported so the schedule is
+// unit-testable without driving real timers.
+export function reconnectDelayMs(attempt: number): number {
+  const exponent = Math.max(0, attempt);
+  return Math.min(RECONNECT_BASE_MS * 2 ** exponent, RECONNECT_MAX_MS);
+}
+
 // presenceState() is keyed by the presence key we track with (the user id), so
 // its keys are exactly the online user ids.
 function onlineUserIdsFrom(channel: { presenceState: () => Record<string, unknown> }): string[] {
@@ -93,7 +108,55 @@ export function subscribeToRoomRealtime(
   client: SupabaseRealtimeClient,
   options: RoomRealtimeOptions
 ) {
-  const channel = client
+  // The live channel is rebuilt on reconnect, so everything below closes over
+  // this mutable reference rather than a fixed channel.
+  let channel: any;
+  let disposed = false;
+  let reconnectAttempt = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleReconnect(): void {
+    // One pending retry at a time, and never after the caller unsubscribed.
+    if (disposed || reconnectTimer) {
+      return;
+    }
+    const delay = reconnectDelayMs(reconnectAttempt);
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined;
+      if (disposed) {
+        return;
+      }
+      // Drop the dead channel before rebuilding so duplicates don't stack on the
+      // socket; teardown is best-effort.
+      try {
+        channel?.unsubscribe();
+      } catch {
+        // ignore — we are replacing it anyway
+      }
+      connect();
+    }, delay);
+  }
+
+  function connect(): void {
+    channel = buildChannel();
+    channel.subscribe((status: string) => {
+      options.onStatus?.(status);
+      if (status === 'SUBSCRIBED') {
+        reconnectAttempt = 0;
+        if (options.userId) {
+          void channel.track({ user_id: options.userId });
+        }
+        return;
+      }
+      if (UNHEALTHY_STATUSES.has(status)) {
+        scheduleReconnect();
+      }
+    });
+  }
+
+  function buildChannel(): any {
+    return client
     .channel(getRoomUpdatesTopic(options.roomId), {
       config: { presence: { key: options.userId ?? '' } }
     })
@@ -161,16 +224,17 @@ export function subscribeToRoomRealtime(
         }
       }
     );
+  }
 
-  channel.subscribe((status: string) => {
-    options.onStatus?.(status);
-    if (status === 'SUBSCRIBED' && options.userId) {
-      void channel.track({ user_id: options.userId });
-    }
-  });
+  connect();
 
   return {
     unsubscribe() {
+      disposed = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
       return channel.unsubscribe();
     },
     sendTyping() {

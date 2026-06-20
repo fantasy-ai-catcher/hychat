@@ -62,7 +62,9 @@ src/
 │   └── realtime.ts           realtime topic helpers + subscribeToRoomRealtime
 │                             (postgres_changes for messages / watchlist / members;
 │                             presence for online/offline + broadcast for typing / focus /
-│                             quotes — batched server quote push, one msg per room per tick)
+│                             quotes — batched server quote push, one msg per room per tick;
+│                             self-heals: rebuilds + re-tracks a channel that drops into
+│                             CHANNEL_ERROR/TIMED_OUT, reconnectDelayMs backoff)
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN, 7203.JP)
     ├── format.ts             [L1] quote display formatting (price/percent/color + /stock status line;
