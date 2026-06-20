@@ -70,6 +70,9 @@ export type WatchlistQuote = {
 export type WatchlistRow = {
   key: string;
   label: string;
+  // The canonical symbol code (e.g. 7709.HK), shown as its own dim column to the
+  // right of the name. Always present even when a shortname is known.
+  symbol: string;
   price: string;
   percent: string;
   direction: WatchlistDirection;
@@ -80,6 +83,7 @@ export type WatchlistTable = {
   // Display-column widths so the Ink render can align columns. The label width
   // is capped (see maxLabelWidth) and long names are truncated at render time.
   labelWidth: number;
+  symbolWidth: number;
   priceWidth: number;
   percentWidth: number;
   hiddenCount: number;
@@ -107,6 +111,7 @@ export function buildWatchlistTable(
   const rows: WatchlistRow[] = visible.map((quote) => ({
     key: quote.symbol,
     label: quote.name?.trim() || quote.symbol,
+    symbol: quote.symbol,
     price: formatQuotePrice(quote.price),
     percent: formatWatchlistPercent(quote.changePercent),
     direction: quoteChangeDirection(quote.changePercent)
@@ -116,8 +121,9 @@ export function buildWatchlistTable(
     Math.max(0, ...rows.map((row) => stringWidth(row.label))),
     maxLabelWidth
   );
+  const symbolWidth = Math.max(0, ...rows.map((row) => stringWidth(row.symbol)));
   const priceWidth = Math.max(0, ...rows.map((row) => stringWidth(row.price)));
   const percentWidth = Math.max(0, ...rows.map((row) => stringWidth(row.percent)));
 
-  return { rows, labelWidth, priceWidth, percentWidth, hiddenCount };
+  return { rows, labelWidth, symbolWidth, priceWidth, percentWidth, hiddenCount };
 }

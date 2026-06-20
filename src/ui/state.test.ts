@@ -7,10 +7,13 @@ import {
   createInitialAppState,
   formatActivityLine,
   formatBeijingTime,
+  layoutMemberGrid,
+  memberGridColumns,
   mergeChatTimeline,
   reducer,
   resolveShellView,
-  type ChatMessage
+  type ChatMessage,
+  type MemberView
 } from './state.js';
 
 function systemLine(overrides: Partial<ChatMessage>): ChatMessage {
@@ -443,6 +446,46 @@ describe('computeMemberStatuses', () => {
       currentUserActive: true
     });
     expect(active.find((m) => m.userId === 'user-2')?.status).toBe('active');
+  });
+});
+
+describe('member grid layout', () => {
+  function member(userId: string): MemberView {
+    return {
+      roomId: 'room-1',
+      userId,
+      displayName: userId,
+      role: 'member',
+      status: 'online',
+      typing: false
+    };
+  }
+
+  it('chooses 1/2/3 columns by terminal width', () => {
+    expect(memberGridColumns(70, 9)).toBe(1);
+    expect(memberGridColumns(80, 9)).toBe(2);
+    expect(memberGridColumns(119, 9)).toBe(2);
+    expect(memberGridColumns(120, 9)).toBe(3);
+  });
+
+  it('never uses more columns than there are members, and at least one', () => {
+    expect(memberGridColumns(200, 2)).toBe(2);
+    expect(memberGridColumns(200, 0)).toBe(1);
+  });
+
+  it('fills the grid row-major within the chosen column count', () => {
+    const members = ['a', 'b', 'c', 'd', 'e'].map(member);
+    const grid = layoutMemberGrid(members, 120); // 3 columns
+    expect(grid.columns).toBe(3);
+    expect(grid.rows.map((row) => row.map((m) => m.userId))).toEqual([
+      ['a', 'b', 'c'],
+      ['d', 'e']
+    ]);
+  });
+
+  it('returns no rows for an empty member list', () => {
+    const grid = layoutMemberGrid([], 120);
+    expect(grid.rows).toEqual([]);
   });
 });
 

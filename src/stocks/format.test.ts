@@ -80,17 +80,27 @@ describe('buildWatchlistTable', () => {
     expect(table.rows[0]).toMatchObject({
       key: 'AAPL.US',
       label: 'AAPL.US',
+      symbol: 'AAPL.US',
       price: '298.01',
       percent: '▲ 0.70%',
       direction: 'up'
     });
   });
 
-  it('prefers the shortname over the symbol code', () => {
+  it('keeps the symbol code as its own column even when a shortname is known', () => {
     const table = buildWatchlistTable([
       { symbol: '0700.HK', name: '腾讯控股', price: 161, changePercent: 11.19 }
     ]);
     expect(table.rows[0].label).toBe('腾讯控股');
+    expect(table.rows[0].symbol).toBe('0700.HK');
+  });
+
+  it('sizes the symbol column by the widest code', () => {
+    const table = buildWatchlistTable([
+      { symbol: 'AAPL.US', price: 1, changePercent: 1 },
+      { symbol: '600519.CN', price: 1, changePercent: 1 }
+    ]);
+    expect(table.symbolWidth).toBe(9); // '600519.CN'
   });
 
   it('sizes the label column by display width (CJK is double width)', () => {
@@ -126,6 +136,7 @@ describe('buildWatchlistTable', () => {
     const table = buildWatchlistTable([]);
     expect(table.rows).toEqual([]);
     expect(table.labelWidth).toBe(0);
+    expect(table.symbolWidth).toBe(0);
     expect(table.priceWidth).toBe(0);
     expect(table.percentWidth).toBe(0);
     expect(table.hiddenCount).toBe(0);

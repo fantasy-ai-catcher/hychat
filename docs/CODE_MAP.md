@@ -35,14 +35,17 @@ src/
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
 ├── ui/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText;
+│   │                         TopInfoPanel header (members grid + stocks table w/ symbol column);
 │   │                         MessageViewport renders text vs kind='system' activity lines;
-│   │                         Ctrl+T toggles per-message Beijing-time timestamps;
+│   │                         Ctrl+T toggles timestamps, Ctrl+S/Ctrl+P toggle stocks/members
+│   │                         sections (resolveTopPanelToggle);
 │   │                         resolveEditorAction maps keypresses -> editor actions
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
 │   │                         applyEditorAction (cursor move/word ops/kill/newline,
 │   │                         readline-style, code-point aware)
 │   ├── state.ts              [L1] UI state types, reducer, welcome lines,
 │   │                         computeMemberStatuses (active/online/offline + typing projection),
+│   │                         memberGridColumns/layoutMemberGrid (header members 1/2/3-col grid),
 │   │                         formatBeijingTime (ISO -> Asia/Shanghai "MM-DD HH:MM"),
 │   │                         formatActivityLine (kind='system' room-activity line text),
 │   │                         computePresenceTransitions (online/offline diff -> joined/left),
@@ -59,7 +62,8 @@ src/
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN, 7203.JP)
     ├── format.ts             [L1] quote display formatting (price/percent/color + /stock status line;
-    │                         buildWatchlistTable: header table rows + CJK-aware column widths)
+    │                         buildWatchlistTable: header table rows (name + symbol-code column)
+    │                         + CJK-aware column widths)
     ├── cache.ts              [L1] quote cache TTL policy
     └── provider.ts           stock provider adapter contract / types
 
