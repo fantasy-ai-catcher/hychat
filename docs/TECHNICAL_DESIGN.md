@@ -25,9 +25,9 @@
 2. Supabase Auth，用于用户认证。
 3. Supabase Row Level Security，用于房间级权限。
 4. Supabase Realtime Postgres Changes，用于 MVP 的消息和 watchlist 更新通知。
-5. Supabase Realtime Broadcast/Presence，作为后续在线状态、typing 状态和更大规模房间的升级方向。
+5. Supabase Realtime Broadcast/Presence，用于在线状态、typing/focus 和股票报价的批量推送。
 6. Supabase Edge Functions，用于调用第三方股票 API。注意 Edge Functions 使用 Deno TypeScript runtime，这是 Supabase 平台约束。
-7. Supabase Cron，用于可选预刷新股票缓存、清理孤儿缓存和后续消息清理。
+7. Supabase Cron（pg_cron + pg_net），用于每 10s 触发活跃房间股票刷新，以及清理孤儿缓存和后续消息清理。
 8. Supabase CLI，用于本地开发、migration、Edge Function 和数据库验收。
 
 ### 1.3 外部服务
@@ -135,13 +135,16 @@ Terminal Client
 Supabase API Gateway
   |-------------------- Auth
   |-------------------- Postgres + RLS
-  |-------------------- Realtime Postgres Changes
+  |-------------------- Realtime Postgres Changes (messages / watchlist / members)
+  |-------------------- Realtime Broadcast (typing / focus / quotes)
   |-------------------- Edge Functions
                             |
                             v
                        Stock Provider API
 
-Optional Supabase Cron -> Edge Function refresh-stock-quotes -> Postgres stock_quotes
+pg_cron (10s) -> pg_net -> Edge Function refresh-active-quotes
+  -> 批量 Yahoo v7 抓取活跃房间 watchlist -> upsert stock_quotes
+  -> 每房间一条 Realtime Broadcast(event=quotes) 推送给客户端
 ```
 
 设计原则：
@@ -348,7 +351,8 @@ updated_at timestamptz not null default now()
 
 缓存规则：
 
-1. MVP 默认 `STOCK_QUOTE_CACHE_TTL_SECONDS=60`。
+1. `STOCK_QUOTE_CACHE_TTL_SECONDS` 决定刷新粒度（当前生产值 10s，配合 10s cron；
+   单机/低频场景可调回 60s）。
 2. cache hit：`now() < cache_expires_at` 且 `status = 'ok'` 时直接返回缓存。
 3. cache miss：缓存不存在、过期或用户强制刷新时调用 provider。
 4. stale fallback：provider 失败但旧缓存存在时返回旧报价，并把响应状态标记为 `stale` 或 `error`。
@@ -364,6 +368,30 @@ updated_at timestamptz not null default now()
    `last_refresh_attempt_at`；距上次尝试不足
    `STOCK_QUOTE_FAILURE_RETRY_SECONDS`（默认 15s）时不再打 provider，
    返回 stale 行。该窗口同时平滑了多成员同时进房间造成的并发踩踏。
+
+服务端定时刷新（避免客户端轮询惊群 + 解耦免费额度与股票数量）：
+
+9. `pg_cron` 每 10s 调用 `private.trigger_active_quote_refresh()`，经 `pg_net`
+   带 `x-cron-secret`（存于 Vault）请求 Edge Function `refresh-active-quotes`。
+10. 该函数用 `public.active_rooms_with_symbols()` 取「有近期心跳 + 有 watchlist」
+    的房间，去重后**一次** Yahoo v7 批量请求拿回全部 symbol，回写 `stock_quotes`。
+11. 抓取与推送都已批量：每个活跃房间一条 Realtime Broadcast（`event=quotes`，
+    payload 为该房间全部报价），所以 Realtime 用量 = tick × 在线人数，与 symbol 数量无关。
+12. v7 需要 cookie + crumb，缓存在 `public.yahoo_auth` 单行表，仅在被拒（401/403）时重新握手。
+13. 客户端进房间后每 ~45s 调 `heartbeat_presence()` 写 `room_presence.last_seen`；
+    房间「有人」由心跳是否在 `STOCK_PRESENCE_STALE_SECONDS`（默认 90s）内判断。
+
+### 5.7 room_presence
+
+服务端定时刷新的「房间有人」信号。presence 本身是 Realtime 内存态、Postgres 不可见，
+故用心跳表落库供 cron 查询。字段 `(room_id, user_id)` 主键 + `last_seen`，按
+rooms × members 规模有界、原地覆盖、随 FK 级联删除，无需清理任务。仅通过 SECURITY
+DEFINER 的 `heartbeat_presence()` 写入（校验活跃 profile + 房间成员），无直连表授权。
+
+### 5.8 yahoo_auth
+
+Yahoo v7 批量接口所需 cookie + crumb 的单行缓存。RLS 开启、无任何客户端授权，仅
+service_role 经 Data API 读写；Edge Function 命中则复用，被拒时重新握手并覆盖。
 
 ## 6. RLS 和 Data API 权限
 

@@ -44,12 +44,12 @@ type MemberChange = {
   role?: 'owner' | 'member';
 };
 
-type StockQuoteChange = {
-  canonical_symbol: string;
+// One quote inside a batched server broadcast (see refresh-active-quotes).
+type BroadcastQuote = {
+  symbol: string;
   price?: number | null;
-  change_percent?: number | null;
-  status?: string;
-  updated_at?: string;
+  changePercent?: number | null;
+  cacheStatus?: string;
 };
 
 type ChannelOptions = { config: { presence: { key: string } } };
@@ -72,12 +72,15 @@ export type RoomRealtimeOptions = {
   onPresenceChange?: (onlineUserIds: string[]) => void;
   onFocus?: (userId: string, active: boolean) => void;
   onTyping?: (userId: string) => void;
-  onQuoteChange?: (quote: StockQuoteChange) => void;
+  // Server pushes all of a room's refreshed quotes in one broadcast message, so
+  // realtime traffic is one message per tick regardless of symbol count.
+  onQuotesUpdate?: (quotes: BroadcastQuote[]) => void;
   onStatus?: (status: string) => void;
 };
 
 const TYPING_BROADCAST_EVENT = 'typing';
 const FOCUS_BROADCAST_EVENT = 'focus';
+const QUOTES_BROADCAST_EVENT = 'quotes';
 
 // presenceState() is keyed by the presence key we track with (the user id), so
 // its keys are exactly the online user ids.
@@ -129,16 +132,10 @@ export function subscribeToRoomRealtime(
         )
     )
     .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        // RLS already limits quote rows to symbols on the member's
-        // watchlists, so no room filter is possible or needed here.
-        table: 'stock_quotes'
-      },
-      (payload: RealtimePayload<Record<string, unknown>>) =>
-        options.onQuoteChange?.(payload.new as StockQuoteChange)
+      'broadcast',
+      { event: QUOTES_BROADCAST_EVENT },
+      (payload: { payload?: { quotes?: BroadcastQuote[] } }) =>
+        options.onQuotesUpdate?.(payload.payload?.quotes ?? [])
     )
     .on('presence', { event: 'sync' }, () =>
       options.onPresenceChange?.(onlineUserIdsFrom(channel))

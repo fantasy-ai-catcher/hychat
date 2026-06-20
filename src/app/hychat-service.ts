@@ -319,6 +319,10 @@ export function createHychatService(supabase: SupabaseLikeClient) {
         body: { symbols, force }
       });
       return ensureData(result);
+    },
+
+    async touchPresence(roomId: string): Promise<void> {
+      await ensureData(supabase.rpc('heartbeat_presence', { target_room_id: roomId }));
     }
   };
 }

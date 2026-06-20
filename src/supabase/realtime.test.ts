@@ -62,12 +62,8 @@ describe('room realtime subscriptions', () => {
         }
       },
       {
-        event: 'postgres_changes',
-        filter: {
-          event: '*',
-          schema: 'public',
-          table: 'stock_quotes'
-        }
+        event: 'broadcast',
+        filter: { event: 'quotes' }
       },
       {
         event: 'presence',
@@ -88,16 +84,16 @@ describe('room realtime subscriptions', () => {
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it('forwards stock quote changes to the quote handler', () => {
+  it('forwards a batched quotes broadcast to the quote handler', () => {
     const handlers: Array<{
       filter: Record<string, unknown>;
-      handler: (payload: { new: Record<string, unknown>; old: unknown }) => void;
+      handler: (payload: { payload?: { quotes?: unknown[] } }) => void;
     }> = [];
     const channel = {
       on(
         _event: string,
         filter: Record<string, unknown>,
-        handler: (payload: { new: Record<string, unknown>; old: unknown }) => void
+        handler: (payload: { payload?: { quotes?: unknown[] } }) => void
       ) {
         handlers.push({ filter, handler });
         return channel;
@@ -105,7 +101,7 @@ describe('room realtime subscriptions', () => {
       subscribe: vi.fn(),
       unsubscribe: vi.fn()
     };
-    const onQuoteChange = vi.fn();
+    const onQuotesUpdate = vi.fn();
 
     subscribeToRoomRealtime(
       { channel: vi.fn(() => channel) },
@@ -113,21 +109,24 @@ describe('room realtime subscriptions', () => {
         roomId: 'room-1',
         onMessage: vi.fn(),
         onWatchlistChange: vi.fn(),
-        onQuoteChange
+        onQuotesUpdate
       }
     );
 
-    const quoteEntry = handlers.find((entry) => entry.filter.table === 'stock_quotes');
+    const quoteEntry = handlers.find((entry) => entry.filter.event === 'quotes');
     quoteEntry?.handler({
-      new: { canonical_symbol: 'AAPL.US', price: 222.5, change_percent: 2.1 },
-      old: null
+      payload: {
+        quotes: [
+          { symbol: 'AAPL.US', price: 222.5, changePercent: 2.1 },
+          { symbol: '0700.HK', price: 440.2, changePercent: -1.17 }
+        ]
+      }
     });
 
-    expect(onQuoteChange).toHaveBeenCalledWith({
-      canonical_symbol: 'AAPL.US',
-      price: 222.5,
-      change_percent: 2.1
-    });
+    expect(onQuotesUpdate).toHaveBeenCalledWith([
+      { symbol: 'AAPL.US', price: 222.5, changePercent: 2.1 },
+      { symbol: '0700.HK', price: 440.2, changePercent: -1.17 }
+    ]);
   });
 
   it('tracks presence and reports online user ids on sync', () => {

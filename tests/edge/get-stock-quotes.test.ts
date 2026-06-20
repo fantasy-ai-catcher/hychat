@@ -33,7 +33,7 @@ describe('resolveStockQuotes', () => {
     const cache = createCache();
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote() {
+      async getQuotes() {
         throw new Error('not expected');
       }
     };
@@ -67,7 +67,7 @@ describe('resolveStockQuotes', () => {
     let providerCalls = 0;
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote() {
+      async getQuotes() {
         providerCalls += 1;
         throw new Error('not expected');
       }
@@ -112,15 +112,15 @@ describe('resolveStockQuotes', () => {
     ]);
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote(symbol) {
-        return {
+      async getQuotes(symbols) {
+        return symbols.map((symbol) => ({
           canonicalSymbol: symbol.canonicalSymbol,
           market: symbol.market,
           providerSymbol: symbol.providerSymbol,
           providerExchange: symbol.providerExchange,
           micCode: symbol.micCode,
           provider: 'twelve_data',
-          status: 'ok',
+          status: 'ok' as const,
           name: 'Tencent Holdings Limited',
           currency: 'HKD',
           price: 456.7,
@@ -128,7 +128,7 @@ describe('resolveStockQuotes', () => {
           cacheExpiresAt: 'ignored',
           updatedAt: 'ignored',
           providerPayload: { secret: 'drop-me', useful: 'keep' }
-        };
+        }));
       }
     };
 
@@ -173,7 +173,7 @@ describe('resolveStockQuotes', () => {
     ]);
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote() {
+      async getQuotes() {
         throw new Error('rate_limited');
       }
     };
@@ -215,7 +215,7 @@ describe('resolveStockQuotes', () => {
     ]);
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote() {
+      async getQuotes() {
         throw new Error('rate_limited');
       }
     };
@@ -256,7 +256,7 @@ describe('resolveStockQuotes', () => {
     let providerCalls = 0;
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote() {
+      async getQuotes() {
         providerCalls += 1;
         throw new Error('not expected');
       }
@@ -297,7 +297,7 @@ describe('resolveStockQuotes', () => {
     let providerCalls = 0;
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote() {
+      async getQuotes() {
         providerCalls += 1;
         throw new Error('not expected');
       }
@@ -336,18 +336,18 @@ describe('resolveStockQuotes', () => {
     ]);
     const provider: EdgeStockProvider = {
       id: 'test',
-      async getQuote(symbol) {
-        return {
+      async getQuotes(symbols) {
+        return symbols.map((symbol) => ({
           canonicalSymbol: symbol.canonicalSymbol,
           market: symbol.market,
           providerSymbol: symbol.providerSymbol,
           provider: 'twelve_data',
-          status: 'ok',
+          status: 'ok' as const,
           price: 130,
           changePercent: 2,
           cacheExpiresAt: 'ignored',
           updatedAt: 'ignored'
-        };
+        }));
       }
     };
 
@@ -364,5 +364,61 @@ describe('resolveStockQuotes', () => {
     expect(result.quotes[0]).toEqual(
       expect.objectContaining({ symbol: 'AAPL.US', price: 130, cacheStatus: 'refreshed' })
     );
+  });
+
+  it('fetches only the symbols that need refreshing in a single batch call', async () => {
+    const cache = createCache([
+      {
+        canonicalSymbol: 'AAPL.US',
+        market: 'US',
+        providerSymbol: 'AAPL',
+        provider: 'yahoo_finance',
+        status: 'ok',
+        price: 123,
+        changePercent: 1,
+        cacheExpiresAt: '2026-06-06T08:00:30.000Z',
+        updatedAt: '2026-06-06T07:59:30.000Z'
+      }
+    ]);
+    const batches: string[][] = [];
+    const provider: EdgeStockProvider = {
+      id: 'test',
+      async getQuotes(symbols) {
+        batches.push(symbols.map((symbol) => symbol.canonicalSymbol));
+        // Yahoo prices MSFT but does not recognize NOPE.
+        return symbols
+          .filter((symbol) => symbol.canonicalSymbol === 'MSFT.US')
+          .map((symbol) => ({
+            canonicalSymbol: symbol.canonicalSymbol,
+            market: symbol.market,
+            providerSymbol: symbol.providerSymbol,
+            provider: 'yahoo_finance',
+            status: 'ok' as const,
+            price: 380,
+            changePercent: 0.5,
+            cacheExpiresAt: 'ignored',
+            updatedAt: 'ignored'
+          }));
+      }
+    };
+
+    const result = await resolveStockQuotes({
+      symbols: ['AAPL.US', 'MSFT.US', 'NOPE.US'],
+      force: false,
+      cache: cache.store,
+      provider,
+      now,
+      ttlSeconds: 60
+    });
+
+    // Fresh AAPL served from cache; only MSFT + NOPE hit the provider, once.
+    expect(batches).toEqual([['MSFT.US', 'NOPE.US']]);
+    expect(result.quotes).toContainEqual(
+      expect.objectContaining({ symbol: 'AAPL.US', cacheStatus: 'hit' })
+    );
+    expect(result.quotes).toContainEqual(
+      expect.objectContaining({ symbol: 'MSFT.US', price: 380, cacheStatus: 'refreshed' })
+    );
+    expect(result.failed).toEqual([{ symbol: 'NOPE.US', reason: 'symbol_not_found' }]);
   });
 });

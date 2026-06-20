@@ -10,3 +10,8 @@ major_version = 17
 
 [realtime]
 enabled = true
+
+# Cron-triggered refresh authorizes via the x-cron-secret header, not a user
+# JWT, so platform JWT verification is disabled for this function only.
+[functions.refresh-active-quotes]
+verify_jwt = false

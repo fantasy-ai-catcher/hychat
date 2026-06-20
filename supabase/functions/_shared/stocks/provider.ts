@@ -32,7 +32,22 @@ export type CachedStockQuote = {
 
 export type EdgeStockProvider = {
   id: string;
-  getQuote(symbol: EdgeNormalizedSymbol): Promise<CachedStockQuote>;
+  // Batch fetch: one network round-trip for many symbols. Returns only the
+  // symbols the provider could price; callers treat a requested-but-missing
+  // symbol as not found. Throws on a whole-batch failure (network / auth).
+  getQuotes(symbols: EdgeNormalizedSymbol[]): Promise<CachedStockQuote[]>;
+};
+
+// Yahoo's batch quote route needs a cookie + crumb pair. It stays valid for a
+// long time, so we persist it (see store.ts) and only re-auth on rejection.
+export type YahooAuth = {
+  cookie: string;
+  crumb: string;
+};
+
+export type YahooAuthStore = {
+  get(): Promise<YahooAuth | null>;
+  set(auth: YahooAuth): Promise<void>;
 };
 
 export function parseEdgeCanonicalSymbol(input: string): EdgeNormalizedSymbol {

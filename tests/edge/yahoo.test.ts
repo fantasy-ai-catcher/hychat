@@ -2,47 +2,92 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   parseEdgeCanonicalSymbol,
-  type EdgeNormalizedSymbol
+  type YahooAuth,
+  type YahooAuthStore
 } from '../../supabase/functions/_shared/stocks/provider.js';
 import { createYahooProvider } from '../../supabase/functions/_shared/stocks/yahoo.js';
 
-function chartResponse(meta: Record<string, unknown>) {
-  return new Response(JSON.stringify({ chart: { result: [{ meta }], error: null } }), {
+type Route = [match: string, respond: Response | ((url: string) => Response)];
+
+function routedFetch(routes: Route[]) {
+  return vi.fn(async (input: unknown) => {
+    const url = String(input);
+    for (const [match, respond] of routes) {
+      if (url.includes(match)) {
+        return typeof respond === 'function' ? respond(url) : respond;
+      }
+    }
+    throw new Error(`unexpected url ${url}`);
+  }) as unknown as typeof fetch;
+}
+
+function quoteResponse(items: Array<Record<string, unknown>>) {
+  return new Response(JSON.stringify({ quoteResponse: { result: items, error: null } }), {
     status: 200
   });
 }
 
-function fetchReturning(response: Response) {
-  return vi.fn(async () => response) as unknown as typeof fetch;
+function cookieResponse() {
+  // fc.yahoo.com answers 404 but still sets the cookie we need.
+  const headers = new Headers();
+  headers.append('set-cookie', 'A3=token; Path=/; Domain=.yahoo.com');
+  return new Response('', { status: 404, headers });
 }
 
-describe('createYahooProvider', () => {
-  it('parses a quote and computes change from the previous close', async () => {
-    const fetchImpl = fetchReturning(
-      chartResponse({
-        symbol: 'AAPL',
-        currency: 'USD',
-        exchangeName: 'NMS',
-        regularMarketPrice: 299.24,
-        chartPreviousClose: 296.42,
-        regularMarketTime: 1781640001,
-        longName: 'Apple Inc.'
-      })
-    );
-    const provider = createYahooProvider(fetchImpl);
+function fakeStore(initial: YahooAuth | null = null): YahooAuthStore & { current: YahooAuth | null } {
+  let auth = initial;
+  return {
+    get current() {
+      return auth;
+    },
+    async get() {
+      return auth;
+    },
+    async set(next) {
+      auth = next;
+    }
+  };
+}
 
-    const quote = await provider.getQuote(parseEdgeCanonicalSymbol('AAPL'));
+describe('createYahooProvider (v7 batch)', () => {
+  it('prices many symbols in one request', async () => {
+    const fetchImpl = routedFetch([
+      [
+        '/v7/finance/quote',
+        quoteResponse([
+          {
+            symbol: 'AAPL',
+            currency: 'USD',
+            regularMarketPrice: 299.24,
+            regularMarketChange: 2.82,
+            regularMarketChangePercent: 0.9513,
+            regularMarketTime: 1781640001,
+            longName: 'Apple Inc.'
+          },
+          { symbol: '0700.HK', currency: 'HKD', regularMarketPrice: 440.2, regularMarketChangePercent: -1.17 }
+        ])
+      ]
+    ]);
+    const provider = createYahooProvider({ store: fakeStore({ cookie: 'A3=x', crumb: 'c' }), fetchImpl });
 
-    expect(quote.price).toBe(299.24);
-    expect(quote.change).toBeCloseTo(2.82, 2);
-    expect(quote.changePercent).toBeCloseTo(0.9513, 3);
-    expect(quote.currency).toBe('USD');
-    expect(quote.name).toBe('Apple Inc.');
-    expect(quote.marketTime).toBe('2026-06-16T20:00:01.000Z');
-    expect(quote.provider).toBe('yahoo_finance');
+    const quotes = await provider.getQuotes([
+      parseEdgeCanonicalSymbol('AAPL'),
+      parseEdgeCanonicalSymbol('0700.HK')
+    ]);
+
+    expect((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect(quotes).toHaveLength(2);
+    const aapl = quotes.find((q) => q.canonicalSymbol === 'AAPL.US');
+    expect(aapl?.price).toBe(299.24);
+    expect(aapl?.change).toBeCloseTo(2.82, 2);
+    expect(aapl?.changePercent).toBeCloseTo(0.9513, 3);
+    expect(aapl?.currency).toBe('USD');
+    expect(aapl?.name).toBe('Apple Inc.');
+    expect(aapl?.marketTime).toBe('2026-06-16T20:00:01.000Z');
+    expect(quotes.find((q) => q.canonicalSymbol === '0700.HK')?.price).toBe(440.2);
   });
 
-  it('maps each market onto its Yahoo ticker suffix', async () => {
+  it('maps each market onto its Yahoo ticker suffix in the batch request', async () => {
     const cases: Array<[string, string]> = [
       ['AAPL', 'AAPL'],
       ['0700.HK', '0700.HK'],
@@ -52,34 +97,74 @@ describe('createYahooProvider', () => {
       ['7203.JP', '7203.T']
     ];
 
-    for (const [canonical, expectedYahoo] of cases) {
-      const fetchImpl = fetchReturning(chartResponse({ regularMarketPrice: 1 }));
-      const provider = createYahooProvider(fetchImpl);
-      await provider.getQuote(parseEdgeCanonicalSymbol(canonical) as EdgeNormalizedSymbol);
+    const canonicals = cases.map(([canonical]) => parseEdgeCanonicalSymbol(canonical));
+    const fetchImpl = routedFetch([['/v7/finance/quote', quoteResponse([])]]);
+    const provider = createYahooProvider({ store: fakeStore({ cookie: 'A3=x', crumb: 'c' }), fetchImpl });
 
-      const requestedUrl = String((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]);
-      expect(requestedUrl).toContain(`/v8/finance/chart/${encodeURIComponent(expectedYahoo)}`);
+    await provider.getQuotes(canonicals);
+
+    const requestedUrl = String((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    const symbolsParam = new URL(requestedUrl).searchParams.get('symbols') ?? '';
+    for (const [, expectedYahoo] of cases) {
+      expect(symbolsParam.split(',')).toContain(expectedYahoo);
     }
   });
 
-  it('reports symbol_not_found when Yahoo returns a chart error', async () => {
-    const fetchImpl = fetchReturning(
-      new Response(
-        JSON.stringify({
-          chart: { result: null, error: { code: 'Not Found', description: 'No data found, symbol may be delisted' } }
-        }),
-        { status: 200 }
-      )
-    );
-    const provider = createYahooProvider(fetchImpl);
+  it('omits symbols Yahoo does not return', async () => {
+    const fetchImpl = routedFetch([
+      ['/v7/finance/quote', quoteResponse([{ symbol: 'AAPL', regularMarketPrice: 1 }])]
+    ]);
+    const provider = createYahooProvider({ store: fakeStore({ cookie: 'A3=x', crumb: 'c' }), fetchImpl });
 
-    await expect(provider.getQuote(parseEdgeCanonicalSymbol('NOPE'))).rejects.toThrow('symbol_not_found');
+    const quotes = await provider.getQuotes([
+      parseEdgeCanonicalSymbol('AAPL'),
+      parseEdgeCanonicalSymbol('NOPE')
+    ]);
+
+    expect(quotes.map((q) => q.canonicalSymbol)).toEqual(['AAPL.US']);
   });
 
-  it('reports symbol_not_found when the payload has no price', async () => {
-    const fetchImpl = fetchReturning(chartResponse({ symbol: 'APPL' }));
-    const provider = createYahooProvider(fetchImpl);
+  it('authenticates (cookie + crumb) when no auth is cached and persists it', async () => {
+    const store = fakeStore(null);
+    const fetchImpl = routedFetch([
+      ['fc.yahoo.com', cookieResponse()],
+      ['/v1/test/getcrumb', new Response('crumb-1', { status: 200 })],
+      ['/v7/finance/quote', quoteResponse([{ symbol: 'AAPL', regularMarketPrice: 1 }])]
+    ]);
+    const provider = createYahooProvider({ store, fetchImpl });
 
-    await expect(provider.getQuote(parseEdgeCanonicalSymbol('APPL'))).rejects.toThrow('symbol_not_found');
+    const quotes = await provider.getQuotes([parseEdgeCanonicalSymbol('AAPL')]);
+
+    expect(quotes).toHaveLength(1);
+    expect(store.current).toEqual({ cookie: 'A3=token', crumb: 'crumb-1' });
+    const v7Url = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => String(call[0]))
+      .find((url) => url.includes('/v7/finance/quote'));
+    expect(v7Url).toContain('crumb=crumb-1');
+  });
+
+  it('re-authenticates once and retries when the quote route rejects the crumb', async () => {
+    const store = fakeStore({ cookie: 'A3=stale', crumb: 'stale' });
+    let quoteCalls = 0;
+    const fetchImpl = routedFetch([
+      ['fc.yahoo.com', cookieResponse()],
+      ['/v1/test/getcrumb', new Response('crumb-2', { status: 200 })],
+      [
+        '/v7/finance/quote',
+        () => {
+          quoteCalls += 1;
+          return quoteCalls === 1
+            ? new Response('Unauthorized', { status: 401 })
+            : quoteResponse([{ symbol: 'AAPL', regularMarketPrice: 7 }]);
+        }
+      ]
+    ]);
+    const provider = createYahooProvider({ store, fetchImpl });
+
+    const quotes = await provider.getQuotes([parseEdgeCanonicalSymbol('AAPL')]);
+
+    expect(quotes[0]?.price).toBe(7);
+    expect(store.current).toEqual({ cookie: 'A3=token', crumb: 'crumb-2' });
+    expect(quoteCalls).toBe(2);
   });
 });

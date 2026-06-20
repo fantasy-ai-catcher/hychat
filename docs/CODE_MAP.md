@@ -21,10 +21,11 @@ src/
 │                             (/start /verify /name /join /leave /rooms /invite-code /watch /stock /color …)
 ├── app/
 │   ├── chat-session.ts       [L1] session orchestration: login/verify flow, command
-│   │                         handling, pending-status + help text, service interface
+│   │                         handling, pending-status + help text, service interface;
+│   │                         presence heartbeat timer (touchPresence while in a room)
 │   ├── hychat-service.ts     [L3] all Supabase calls: auth/OTP, ensureProfile/setDisplayName,
 │   │                         rooms (listRoomsWithCounts/createRoom/joinRoom/leaveRoom), messages,
-│   │                         members, invite codes, quotes
+│   │                         members, invite codes, quotes, touchPresence (heartbeat_presence RPC)
 │   ├── session-storage.ts    local session file persistence + --profile paths
 │   ├── profile-colors.ts     [L1] color palette + helpers
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
@@ -44,8 +45,9 @@ src/
 ├── supabase/
 │   ├── client.ts             Supabase client factory
 │   └── realtime.ts           realtime topic helpers + subscribeToRoomRealtime
-│                             (postgres_changes for messages / watchlist / members / quotes;
-│                             presence for online/offline + broadcast for typing & focus)
+│                             (postgres_changes for messages / watchlist / members;
+│                             presence for online/offline + broadcast for typing / focus /
+│                             quotes — batched server quote push, one msg per room per tick)
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN, 7203.JP)
     ├── format.ts             [L1] quote display formatting (price/percent/color + /stock status line)
@@ -53,13 +55,22 @@ src/
     └── provider.ts           stock provider adapter contract / types
 
 supabase/
+├── config.toml               local/project config; refresh-active-quotes has verify_jwt=false
 ├── migrations/               schema, RLS, RPCs (identity, invite codes, open rooms, …);
 │                             newest migration is the source of truth
+│                             (room_presence + heartbeat_presence / active_rooms_with_symbols
+│                             RPCs, yahoo_auth crumb cache, watchlist cap trigger,
+│                             pg_cron 10s job triggering the refresh below)
 └── functions/
     ├── get-stock-quotes/
-    │   └── index.ts          quote Edge Function (JWT + active-profile check, throttle)
-    └── _shared/stocks/       shared cache / provider / yahoo adapter for functions
-                              (yahoo.ts: keyless Yahoo v8/chart, US/HK/CN/JP)
+    │   └── index.ts          quote Edge Function (JWT + active-profile check), /stock + /refresh
+    ├── refresh-active-quotes/
+    │   └── index.ts          cron-triggered Edge Function (x-cron-secret auth): batch-refreshes
+    │                         present rooms' watchlists, broadcasts each room its quotes
+    └── _shared/stocks/       shared logic for both functions
+                              (yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, US/HK/CN/JP;
+                              cache.ts: batched TTL/backoff resolveStockQuotes;
+                              store.ts: stock_quotes cache + yahoo_auth crumb store)
 
 scripts/
 ├── dev-login.mjs             pre-log-in test accounts (no email/OTP) into --profile files

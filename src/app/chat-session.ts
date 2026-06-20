@@ -79,6 +79,9 @@ type ChatServiceLike = {
   addWatchSymbol: (input: { roomId: string; symbol: string; addedBy: string }) => Promise<void>;
   removeWatchSymbol: (roomId: string, symbol: string) => Promise<void>;
   getQuotes: (symbols: string[], force: boolean) => Promise<unknown>;
+  // Heartbeats keep the room "present" so the server-side scheduled refresh
+  // knows to fetch its watchlist. Optional so tests can omit it.
+  touchPresence?: (roomId: string) => Promise<void>;
 };
 
 type RoomSubscription = {
@@ -87,10 +90,11 @@ type RoomSubscription = {
   sendFocus?: (active: boolean) => void;
 };
 
-type StockQuoteChangeRow = {
-  canonical_symbol: string;
+type BroadcastQuoteRow = {
+  symbol: string;
   price?: number | null;
-  change_percent?: number | null;
+  changePercent?: number | null;
+  cacheStatus?: string;
 };
 
 type RealtimeLike = {
@@ -104,7 +108,7 @@ type RealtimeLike = {
       onPresenceChange?: (onlineUserIds: string[]) => void;
       onFocus?: (userId: string, active: boolean) => void;
       onTyping?: (userId: string) => void;
-      onQuoteChange?: (quote: StockQuoteChangeRow) => void;
+      onQuotesUpdate?: (quotes: BroadcastQuoteRow[]) => void;
       onStatus?: (status: string) => void;
     }
   ) => RoomSubscription;
@@ -250,6 +254,9 @@ const helpText = formatHelpText(helpSections);
 // broadcast; we re-broadcast our own typing at most this often while typing.
 const typingTtlMs = 3000;
 const typingThrottleMs = 1500;
+// Kept under the server's 90s presence-stale window so one missed beat does not
+// flip a room to "empty" and pause its scheduled quote refresh.
+const heartbeatIntervalMs = 45000;
 
 // Shown in the status line while a command's network request is in flight.
 // Returns null for input that resolves instantly, so the status does not flash.
@@ -322,6 +329,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
   // broadcast arrives. Reset on each new join so they never leak across rooms.
   let typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let lastTypingSentAt = 0;
+  // Presence heartbeat for the currently joined room; cleared on every teardown
+  // so it never leaks across rooms or outlives the session.
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   // The local terminal's focus, mirrored into presence so peers can tell an
   // active member (tab focused) from one who is merely connected.
   let currentFocus: 'active' | 'online' = 'active';
@@ -331,6 +341,25 @@ export function createChatSession(options: CreateChatSessionOptions) {
       clearTimeout(timer);
     }
     typingTimers = new Map();
+  }
+
+  function stopHeartbeat(): void {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    }
+  }
+
+  function startHeartbeat(roomId: string): void {
+    stopHeartbeat();
+    if (!options.service.touchPresence) {
+      return;
+    }
+    const beat = () => void options.service.touchPresence?.(roomId).catch(() => {});
+    // Announce presence right away so the room is "active" before the first
+    // interval, then keep it warm.
+    beat();
+    heartbeatTimer = setInterval(beat, heartbeatIntervalMs);
   }
 
   function snapshot(): ChatSessionSnapshot {
@@ -431,6 +460,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
   async function joinRoom(roomId: string): Promise<void> {
     subscription?.unsubscribe();
     clearTypingTimers();
+    stopHeartbeat();
     apply({ type: 'room-joined', roomId });
     // Load messages/members/watchlist first (so messages-loaded cannot clobber
     // a realtime message), then subscribe so presence is announced before the
@@ -471,17 +501,18 @@ export function createChatSession(options: CreateChatSessionOptions) {
         }
         markTyping(roomId, typingUserId);
       },
-      onQuoteChange(quote) {
+      onQuotesUpdate(quotes) {
+        if (quotes.length === 0) {
+          return;
+        }
         apply({
           type: 'quotes-updated',
-          quotes: [
-            {
-              symbol: quote.canonical_symbol,
-              price: quote.price ?? undefined,
-              changePercent: quote.change_percent ?? undefined,
-              cacheStatus: 'refreshed'
-            }
-          ]
+          quotes: quotes.map((quote) => ({
+            symbol: quote.symbol,
+            price: quote.price ?? undefined,
+            changePercent: quote.changePercent ?? undefined,
+            cacheStatus: (quote.cacheStatus as QuoteSummary['cacheStatus']) ?? 'refreshed'
+          }))
         });
         emitSnapshotChange();
       },
@@ -490,6 +521,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
         emitSnapshotChange();
       }
     });
+
+    // Mark this room present so the server-side scheduled refresh keeps its
+    // quotes warm while we are here.
+    startHeartbeat(roomId);
 
     // Off the critical path: the room is already interactive and presence is
     // announced, so refresh quotes without blocking the join.
@@ -588,6 +623,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
         subscription?.unsubscribe();
         subscription = undefined;
+        stopHeartbeat();
         await options.service.signOut();
         user = null;
         verifiedEmail = null;
@@ -664,6 +700,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
         subscription?.unsubscribe();
         subscription = undefined;
         clearTypingTimers();
+        stopHeartbeat();
         apply({ type: 'room-left', roomId });
         await loadRooms();
         statusText = `Left ${room?.name ?? roomId}.`;
@@ -783,6 +820,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
       case 'quit':
         shouldExit = true;
         subscription?.unsubscribe();
+        stopHeartbeat();
         statusText = 'Bye.';
         return;
     }

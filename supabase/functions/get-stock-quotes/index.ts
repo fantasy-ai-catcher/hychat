@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-import { resolveStockQuotes, type StockQuoteCacheStore } from '../_shared/stocks/cache.ts';
+import { resolveStockQuotes } from '../_shared/stocks/cache.ts';
+import { createSupabaseQuoteCache, createYahooAuthStore } from '../_shared/stocks/store.ts';
 import { createYahooProvider } from '../_shared/stocks/yahoo.ts';
 
 type RequestBody = {
@@ -60,76 +61,13 @@ Deno.serve(async (request) => {
     if (!profile) {
       return Response.json({ error: 'profile_not_active' }, { status: 403 });
     }
-    const cache: StockQuoteCacheStore = {
-      async get(symbol) {
-        const { data, error } = await supabase
-          .from('stock_quotes')
-          .select('*')
-          .eq('canonical_symbol', symbol)
-          .maybeSingle();
-
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        if (!data) {
-          return null;
-        }
-
-        return {
-          canonicalSymbol: data.canonical_symbol,
-          market: data.market,
-          providerSymbol: data.provider_symbol,
-          providerExchange: data.provider_exchange,
-          micCode: data.mic_code,
-          name: data.name,
-          currency: data.currency,
-          price: data.price,
-          change: data.change,
-          changePercent: data.change_percent,
-          marketTime: data.market_time,
-          provider: data.provider,
-          providerPayload: data.provider_payload,
-          status: data.status,
-          errorMessage: data.error_message,
-          cacheExpiresAt: data.cache_expires_at,
-          lastRefreshAttemptAt: data.last_refresh_attempt_at,
-          updatedAt: data.updated_at
-        };
-      },
-      async upsert(quote) {
-        const { error } = await supabase.from('stock_quotes').upsert({
-          canonical_symbol: quote.canonicalSymbol,
-          market: quote.market,
-          provider_symbol: quote.providerSymbol,
-          provider_exchange: quote.providerExchange,
-          mic_code: quote.micCode,
-          name: quote.name,
-          currency: quote.currency,
-          price: quote.price,
-          change: quote.change,
-          change_percent: quote.changePercent,
-          market_time: quote.marketTime,
-          provider: quote.provider,
-          provider_payload: quote.providerPayload ?? {},
-          status: quote.status,
-          error_message: quote.errorMessage,
-          cache_expires_at: quote.cacheExpiresAt,
-          last_refresh_attempt_at: quote.lastRefreshAttemptAt ?? new Date().toISOString(),
-          updated_at: quote.updatedAt
-        });
-
-        if (error) {
-          throw new Error(error.message);
-        }
-      }
-    };
+    const cache = createSupabaseQuoteCache(supabase);
 
     const result = await resolveStockQuotes({
       symbols: body.symbols,
       force: body.force ?? false,
       cache,
-      provider: createYahooProvider(),
+      provider: createYahooProvider({ store: createYahooAuthStore(supabase) }),
       now: new Date(),
       ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '60'),
       forceMinIntervalSeconds: Number(

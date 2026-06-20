@@ -166,6 +166,9 @@ function createService() {
           quotes: [{ symbol: 'AAPL.US', price: 123, changePercent: 1.2, cacheStatus: 'hit' }],
           failed: []
         };
+      },
+      async touchPresence(roomId: string) {
+        calls.push({ method: 'touchPresence', args: [roomId] });
       }
     }
   };
@@ -614,7 +617,7 @@ describe('createChatSession', () => {
         onMessage: expect.any(Function),
         onWatchlistChange: expect.any(Function),
         onMembersChange: expect.any(Function),
-        onQuoteChange: expect.any(Function)
+        onQuotesUpdate: expect.any(Function)
       })
     );
   });
@@ -672,6 +675,35 @@ describe('createChatSession', () => {
     expect(unsubscribe).toHaveBeenCalled();
     expect(snapshot.state.activeRoomId).toBeUndefined();
     expect(snapshot.statusText).toContain('Left');
+  });
+
+  it('heartbeats presence on join, on interval, and stops after leaving', async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, calls } = createService();
+      const realtime = {
+        subscribeToRoom: vi.fn(() => ({ unsubscribe: vi.fn() }))
+      };
+      const session = createChatSession({ service, realtime });
+
+      await signIn(session);
+      await session.handleLine('/join Friends');
+
+      const beats = () => calls.filter((c) => c.method === 'touchPresence');
+      // Immediate beat on join so the room is present before the first interval.
+      expect(beats()).toHaveLength(1);
+      expect(beats()[0].args[0]).toBe('room-1');
+
+      await vi.advanceTimersByTimeAsync(45000);
+      expect(beats()).toHaveLength(2);
+
+      await session.handleLine('/leave');
+      await vi.advanceTimersByTimeAsync(45000 * 3);
+      // No further beats once the room is left.
+      expect(beats()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('applies realtime presence to the online member set', async () => {
@@ -799,19 +831,17 @@ describe('createChatSession', () => {
     expect(sendTyping).toHaveBeenCalledTimes(1);
   });
 
-  it('applies realtime quote updates to the visible quote map', async () => {
+  it('applies a batched realtime quotes broadcast to the visible quote map', async () => {
     const { service } = createService();
-    let quoteHandler:
-      | ((quote: {
-          canonical_symbol: string;
-          price?: number | null;
-          change_percent?: number | null;
-        }) => void)
+    let quotesHandler:
+      | ((
+          quotes: Array<{ symbol: string; price?: number | null; changePercent?: number | null }>
+        ) => void)
       | undefined;
     const onSnapshotChange = vi.fn();
     const realtime = {
       subscribeToRoom: vi.fn((_roomId, handlers) => {
-        quoteHandler = handlers.onQuoteChange;
+        quotesHandler = handlers.onQuotesUpdate;
         return { unsubscribe: vi.fn() };
       })
     };
@@ -821,17 +851,17 @@ describe('createChatSession', () => {
     await session.handleLine('/join Friends');
     onSnapshotChange.mockClear();
 
-    quoteHandler?.({
-      canonical_symbol: 'AAPL.US',
-      price: 222.5,
-      change_percent: 2.1
-    });
+    quotesHandler?.([
+      { symbol: 'AAPL.US', price: 222.5, changePercent: 2.1 },
+      { symbol: '0700.HK', price: 440.2, changePercent: -1.17 }
+    ]);
 
     expect(onSnapshotChange).toHaveBeenCalledWith(
       expect.objectContaining({
         state: expect.objectContaining({
           quotesBySymbol: expect.objectContaining({
-            'AAPL.US': expect.objectContaining({ price: 222.5, changePercent: 2.1 })
+            'AAPL.US': expect.objectContaining({ price: 222.5, changePercent: 2.1 }),
+            '0700.HK': expect.objectContaining({ price: 440.2, changePercent: -1.17 })
           })
         })
       })

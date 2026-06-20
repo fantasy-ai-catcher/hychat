@@ -1,5 +1,6 @@
 import {
   type CachedStockQuote,
+  type EdgeNormalizedSymbol,
   type EdgeStockProvider,
   parseEdgeCanonicalSymbol
 } from './provider.js';
@@ -48,9 +49,24 @@ export async function resolveStockQuotes(
   const forceMinIntervalMs = (input.forceMinIntervalSeconds ?? 30) * 1000;
   const failureRetryMs = (input.failureRetrySeconds ?? 15) * 1000;
 
+  // Dedupe so a symbol watched in several rooms is read/fetched once.
+  const symbols = new Map<string, EdgeNormalizedSymbol>();
   for (const rawSymbol of input.symbols) {
-    const symbol = parseEdgeCanonicalSymbol(rawSymbol);
-    const cached = await input.cache.get(symbol.canonicalSymbol);
+    const parsed = parseEdgeCanonicalSymbol(rawSymbol);
+    symbols.set(parsed.canonicalSymbol, parsed);
+  }
+
+  // Read every cache row up front, then decide what still needs the provider.
+  const cachedBySymbol = new Map<string, CachedStockQuote | null>();
+  await Promise.all(
+    [...symbols.values()].map(async (symbol) => {
+      cachedBySymbol.set(symbol.canonicalSymbol, await input.cache.get(symbol.canonicalSymbol));
+    })
+  );
+
+  const toFetch: EdgeNormalizedSymbol[] = [];
+  for (const symbol of symbols.values()) {
+    const cached = cachedBySymbol.get(symbol.canonicalSymbol) ?? null;
     const msSinceAttempt = getMsSinceAttempt(cached, input.now);
     const cacheIsFresh =
       cached !== null &&
@@ -83,31 +99,58 @@ export async function resolveStockQuotes(
       continue;
     }
 
-    try {
-      const fresh = await input.provider.getQuote(symbol);
+    toFetch.push(symbol);
+  }
+
+  if (toFetch.length === 0) {
+    return { quotes, failed };
+  }
+
+  // One batched provider call for everything that needs refreshing.
+  let fresh: CachedStockQuote[] | null = null;
+  let batchError: string | null = null;
+  try {
+    fresh = await input.provider.getQuotes(toFetch);
+  } catch (error) {
+    batchError = error instanceof Error ? error.message : 'provider_unavailable';
+  }
+
+  const freshBySymbol = new Map<string, CachedStockQuote>();
+  for (const quote of fresh ?? []) {
+    freshBySymbol.set(quote.canonicalSymbol, quote);
+  }
+
+  const upserts: Array<Promise<void>> = [];
+  for (const symbol of toFetch) {
+    const cached = cachedBySymbol.get(symbol.canonicalSymbol) ?? null;
+    const freshQuote = freshBySymbol.get(symbol.canonicalSymbol);
+
+    if (freshQuote) {
       const sanitized = sanitizeQuote({
-        ...fresh,
+        ...freshQuote,
         cacheExpiresAt: getCacheExpiresAt(input.now, input.ttlSeconds),
         lastRefreshAttemptAt: input.now.toISOString(),
         updatedAt: input.now.toISOString()
       });
-      await input.cache.upsert(sanitized);
+      upserts.push(input.cache.upsert(sanitized));
       quotes.push(toResolvedQuote(sanitized, 'refreshed'));
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'provider_unavailable';
-      failed.push({ symbol: symbol.canonicalSymbol, reason });
+      continue;
+    }
 
-      if (cached) {
-        const stale: CachedStockQuote = {
-          ...cached,
-          status: 'stale',
-          lastRefreshAttemptAt: input.now.toISOString()
-        };
-        await input.cache.upsert(stale);
-        quotes.push(toResolvedQuote(stale, 'stale'));
-      }
+    // A whole-batch failure blames every symbol; a missing item in an otherwise
+    // good response means Yahoo did not recognize that one ticker.
+    failed.push({ symbol: symbol.canonicalSymbol, reason: batchError ?? 'symbol_not_found' });
+    if (cached) {
+      const stale: CachedStockQuote = {
+        ...cached,
+        status: 'stale',
+        lastRefreshAttemptAt: input.now.toISOString()
+      };
+      upserts.push(input.cache.upsert(stale));
+      quotes.push(toResolvedQuote(stale, 'stale'));
     }
   }
+  await Promise.all(upserts);
 
   return { quotes, failed };
 }
