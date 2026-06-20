@@ -421,4 +421,63 @@ describe('resolveStockQuotes', () => {
     );
     expect(result.failed).toEqual([{ symbol: 'NOPE.US', reason: 'symbol_not_found' }]);
   });
+
+  it('overrides HK/CN names with the resolver and only asks for un-named symbols', async () => {
+    // 0700.HK already has a Chinese name cached; 7709.HK has none yet. Both rows
+    // are expired so both refresh; AAPL.US is a US symbol the resolver ignores.
+    const cache = createCache([
+      {
+        canonicalSymbol: '0700.HK',
+        market: 'HK',
+        providerSymbol: '0700',
+        provider: 'yahoo',
+        status: 'ok',
+        name: '腾讯控股',
+        price: 400,
+        cacheExpiresAt: '2026-06-06T07:59:59.000Z',
+        updatedAt: '2026-06-06T07:59:00.000Z'
+      }
+    ]);
+    const provider: EdgeStockProvider = {
+      id: 'test',
+      async getQuotes(symbols) {
+        return symbols.map((symbol) => ({
+          canonicalSymbol: symbol.canonicalSymbol,
+          market: symbol.market,
+          providerSymbol: symbol.providerSymbol,
+          providerExchange: symbol.providerExchange,
+          provider: 'yahoo',
+          status: 'ok' as const,
+          name: 'English From Yahoo',
+          price: 100,
+          changePercent: 1,
+          cacheExpiresAt: 'ignored',
+          updatedAt: 'ignored'
+        }));
+      }
+    };
+    const asked: string[][] = [];
+
+    const result = await resolveStockQuotes({
+      symbols: ['0700.HK', '7709.HK', 'AAPL.US'],
+      force: false,
+      cache: cache.store,
+      provider,
+      now,
+      ttlSeconds: 60,
+      async nameResolver(symbols) {
+        asked.push(symbols.map((symbol) => symbol.canonicalSymbol));
+        return new Map([['7709.HK', 'XL二南方海力士']]);
+      }
+    });
+
+    const bySymbol = new Map(result.quotes.map((quote) => [quote.symbol, quote]));
+    // Only the un-named HK symbol is looked up; the already-Chinese one is not.
+    expect(asked).toEqual([['7709.HK']]);
+    // Fetched Chinese name wins for 7709, cached Chinese name is kept for 0700,
+    // and the US symbol keeps Yahoo's English name.
+    expect(bySymbol.get('7709.HK')?.name).toBe('XL二南方海力士');
+    expect(bySymbol.get('0700.HK')?.name).toBe('腾讯控股');
+    expect(bySymbol.get('AAPL.US')?.name).toBe('English From Yahoo');
+  });
 });

@@ -27,6 +27,7 @@ import {
 type QuoteApiResult = {
   quotes?: Array<{
     symbol: string;
+    name?: string;
     price?: number;
     changePercent?: number;
     cacheStatus?: QuoteSummary['cacheStatus'];
@@ -93,6 +94,7 @@ type RoomSubscription = {
 
 type BroadcastQuoteRow = {
   symbol: string;
+  name?: string | null;
   price?: number | null;
   changePercent?: number | null;
   cacheStatus?: string;
@@ -589,6 +591,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
           type: 'quotes-updated',
           quotes: quotes.map((quote) => ({
             symbol: quote.symbol,
+            name: quote.name ?? undefined,
             price: quote.price ?? undefined,
             changePercent: quote.changePercent ?? undefined,
             cacheStatus: (quote.cacheStatus as QuoteSummary['cacheStatus']) ?? 'refreshed'
@@ -1050,6 +1053,7 @@ function toRoomMemberSummary(member: MemberRow): RoomMemberSummary {
 function toQuoteSummary(quote: NonNullable<QuoteApiResult['quotes']>[number]): QuoteSummary {
   return {
     symbol: quote.symbol,
+    name: quote.name,
     price: quote.price,
     changePercent: quote.changePercent,
     cacheStatus: quote.cacheStatus ?? 'refreshed'

@@ -54,7 +54,8 @@ src/
 │                             quotes — batched server quote push, one msg per room per tick)
 └── stocks/
     ├── symbols.ts            [L1] canonical symbol parsing (AAPL.US, 0700.HK, 600519.CN, 7203.JP)
-    ├── format.ts             [L1] quote display formatting (price/percent/color + /stock status line)
+    ├── format.ts             [L1] quote display formatting (price/percent/color + /stock status line;
+    │                         buildWatchlistTable: header table rows + CJK-aware column widths)
     ├── cache.ts              [L1] quote cache TTL policy
     └── provider.ts           stock provider adapter contract / types
 
@@ -74,7 +75,9 @@ supabase/
     │                         present rooms' watchlists, broadcasts each room its quotes
     └── _shared/stocks/       shared logic for both functions
                               (yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, US/HK/CN/JP;
-                              cache.ts: batched TTL/backoff resolveStockQuotes;
+                              cache.ts: batched TTL/backoff resolveStockQuotes + fetch-once
+                              Chinese-name resolution (nameResolver) for HK/CN rows;
+                              tencent.ts: qt.gtimg.cn free Chinese names for HK/CN (display only);
                               store.ts: stock_quotes cache + yahoo_auth crumb store)
 
 scripts/

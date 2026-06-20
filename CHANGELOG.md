@@ -8,6 +8,18 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- The header watchlist is now a vertical aligned table (one stock per row,
+  aligned price/change columns) instead of a single line that wrapped mid-number
+  once you watched more than a couple of symbols. The header grows with the
+  watchlist instead of overflowing into the chat.
+- Watched stocks now show the company name (e.g. 腾讯控股) rather than the
+  raw symbol code, falling back to the code until a name loads. Up/down moves use
+  a green ▲ / red ▼ arrow.
+- Hong Kong and A-share stocks now display their Chinese name (from Tencent's
+  free quote feed, fetched once per symbol and cached). US/JP stocks keep their
+  English name. Prices still come from Yahoo.
+
 ## [0.1.1] - 2026-06-20
 
 ### Added

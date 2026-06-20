@@ -127,6 +127,7 @@ export function computeMemberStatuses(
 
 export type QuoteSummary = {
   symbol: string;
+  name?: string;
   price?: number;
   changePercent?: number;
   cacheStatus: 'hit' | 'refreshed' | 'stale';
