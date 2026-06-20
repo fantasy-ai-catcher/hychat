@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-20
+
 ### Changed
 - The header watchlist is now a vertical aligned table (one stock per row,
   aligned price/change columns) instead of a single line that wrapped mid-number
