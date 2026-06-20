@@ -1,6 +1,31 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { getRoomUpdatesTopic, subscribeToRoomRealtime } from './realtime.js';
+import {
+  getRoomUpdatesTopic,
+  reconnectDelayMs,
+  subscribeToRoomRealtime
+} from './realtime.js';
+
+// A channel double whose subscribe() captures the status callback so a test can
+// drive SUBSCRIBED / CHANNEL_ERROR transitions by hand.
+function makeFakeChannel() {
+  let statusCallback: ((status: string) => void) | undefined;
+  const channel = {
+    on: () => channel,
+    subscribe: vi.fn((cb: (status: string) => void) => {
+      statusCallback = cb;
+      return channel;
+    }),
+    unsubscribe: vi.fn(),
+    track: vi.fn(),
+    presenceState: () => ({}),
+    send: vi.fn(),
+    emitStatus(status: string) {
+      statusCallback?.(status);
+    }
+  };
+  return channel;
+}
 
 describe('room realtime subscriptions', () => {
   it('builds a stable room updates topic', () => {
@@ -206,6 +231,66 @@ describe('room realtime subscriptions', () => {
     const focusEntry = handlers.find((entry) => entry.filter.event === 'focus');
     focusEntry?.handler({ payload: { userId: 'user-2', active: true } });
     expect(onFocus).toHaveBeenCalledWith('user-2', true);
+  });
+
+  it('backs off exponentially up to a cap', () => {
+    expect(reconnectDelayMs(0)).toBe(1000);
+    expect(reconnectDelayMs(1)).toBe(2000);
+    expect(reconnectDelayMs(3)).toBe(8000);
+    // Capped at 30s no matter how many attempts.
+    expect(reconnectDelayMs(10)).toBe(30000);
+  });
+
+  it('rebuilds the channel after it errors, then re-tracks presence', () => {
+    vi.useFakeTimers();
+    const channels = [makeFakeChannel(), makeFakeChannel()];
+    let built = 0;
+    const client = { channel: vi.fn(() => channels[built++]) };
+
+    subscribeToRoomRealtime(client, {
+      roomId: 'room-1',
+      userId: 'user-1',
+      onMessage: vi.fn(),
+      onWatchlistChange: vi.fn()
+    });
+
+    expect(client.channel).toHaveBeenCalledTimes(1);
+
+    // The first channel drops; nothing happens until the backoff elapses.
+    channels[0].emitStatus('CHANNEL_ERROR');
+    expect(client.channel).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1000);
+    expect(channels[0].unsubscribe).toHaveBeenCalledOnce();
+    expect(client.channel).toHaveBeenCalledTimes(2);
+
+    // The fresh channel comes up and re-announces presence.
+    channels[1].emitStatus('SUBSCRIBED');
+    expect(channels[1].track).toHaveBeenCalledWith({ user_id: 'user-1' });
+
+    vi.useRealTimers();
+  });
+
+  it('does not reconnect a channel that was intentionally unsubscribed', () => {
+    vi.useFakeTimers();
+    const channels = [makeFakeChannel(), makeFakeChannel()];
+    let built = 0;
+    const client = { channel: vi.fn(() => channels[built++]) };
+
+    const subscription = subscribeToRoomRealtime(client, {
+      roomId: 'room-1',
+      userId: 'user-1',
+      onMessage: vi.fn(),
+      onWatchlistChange: vi.fn()
+    });
+
+    // Error schedules a retry, but unsubscribing cancels it.
+    channels[0].emitStatus('CHANNEL_ERROR');
+    subscription.unsubscribe();
+    vi.advanceTimersByTime(60000);
+
+    expect(client.channel).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it('broadcasts and receives typing events', () => {
