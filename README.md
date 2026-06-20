@@ -16,7 +16,20 @@ Implemented MVP:
 8. Open rooms: create rooms, discover all rooms with member counts, self-join any room, member listing, message history, and realtime message/watchlist updates.
 9. Shared room watchlist and manual quote refresh.
 
-## Requirements
+## Install (friends)
+
+```bash
+brew install fantasy-ai-catcher/tap/hychat
+hychat
+```
+
+No configuration needed — the Supabase connection is baked in. You need an
+invite code from the admin to register: `/start <your-email> <invite-code>`,
+then `/verify <code-from-email>`. Update with `brew upgrade hychat`.
+
+Maintainer release steps live in [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
+
+## Requirements (development)
 
 1. Node.js 22 or newer.
 2. pnpm 10.

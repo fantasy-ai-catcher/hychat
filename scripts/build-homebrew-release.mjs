@@ -34,7 +34,7 @@ execFileSync('pnpm', ['pack', '--pack-destination', releasesDir], {
 
 const tarballPath = findNewestTarball(releasesDir);
 const sha256 = createHash('sha256').update(readFileSync(tarballPath)).digest('hex');
-const repository = process.env.GITHUB_REPOSITORY ?? 'OWNER/hychat';
+const repository = process.env.GITHUB_REPOSITORY ?? 'fantasy-ai-catcher/hychat';
 const tarballUrl =
   process.env.HOMEBREW_TARBALL_URL ??
   `https://github.com/${repository}/releases/download/v${packageJson.version}/${basename(

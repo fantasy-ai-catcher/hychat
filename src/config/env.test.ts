@@ -3,17 +3,26 @@ import { describe, expect, it } from 'vitest';
 import { parseEnv } from './env.js';
 
 describe('parseEnv', () => {
-  it('requires Supabase connection settings', () => {
+  it('falls back to baked-in Supabase connection defaults', () => {
     const result = parseEnv({});
 
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.errors).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining('SUPABASE_URL'),
-          expect.stringContaining('SUPABASE_PUBLISHABLE_KEY')
-        ])
-      );
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.value.supabaseUrl).toMatch(/^https:\/\/.+\.supabase\.co$/);
+      expect(result.value.supabasePublishableKey).toMatch(/^sb_publishable_/);
+    }
+  });
+
+  it('lets env override the baked-in connection defaults', () => {
+    const result = parseEnv({
+      SUPABASE_URL: 'https://override.supabase.co',
+      SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_override'
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.value.supabaseUrl).toBe('https://override.supabase.co');
+      expect(result.value.supabasePublishableKey).toBe('sb_publishable_override');
     }
   });
 

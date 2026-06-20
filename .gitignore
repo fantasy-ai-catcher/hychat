@@ -9,3 +9,6 @@ coverage/
 .worktrees/
 .agents/
 supabase/.temp/
+
+# Local Claude Code config / bundled skills — not part of the published app
+.claude/
