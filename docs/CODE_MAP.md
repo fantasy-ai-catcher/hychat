@@ -36,10 +36,14 @@ src/
 ├── ui/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText;
 │   │                         TopInfoPanel header (members grid + stocks table w/ symbol column);
-│   │                         MessageViewport renders text vs kind='system' activity lines;
-│   │                         Ctrl+T toggles timestamps, Ctrl+S/Ctrl+P toggle stocks/members
-│   │                         sections (resolveTopPanelToggle);
+│   │                         MessageViewport pre-wraps + windows scrollback (buildRenderLines/
+│   │                         sliceWindow); mouse wheel + PageUp/PageDown scroll, Enter jumps to latest;
+│   │                         Ctrl+T toggles timestamps, Ctrl+S toggles the whole top panel (isPanelToggle);
 │   │                         resolveEditorAction maps keypresses -> editor actions
+│   ├── scroll.ts             [L1] chat scrollback math: buildRenderLines (flatten messages to one
+│   │                         CJK-aware wrapped row each) + sliceWindow (visible slice by scroll offset)
+│   ├── terminal-mouse.ts     [L1/L2] xterm mouse reporting (DECSET 1000/1006): enable/parse SGR wheel
+│   │                         events (button 64/65) so the wheel scrolls chat; isMouseSequence drops bytes
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
 │   │                         applyEditorAction (cursor move/word ops/kill/newline,
 │   │                         readline-style, code-point aware)
