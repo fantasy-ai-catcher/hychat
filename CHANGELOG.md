@@ -23,6 +23,9 @@ All notable changes to HyChat are recorded here. The format loosely follows
 ### Changed
 - Each watched stock now shows its symbol code (e.g. `7709.HK`) in a dim column
   to the right of its name.
+- The connection status in the header and status bar now stands out when it is
+  not healthy: `connected` stays quiet, but `connecting`/`disconnected` show in
+  bold yellow/red with a `⚠` so a dropped connection is hard to miss.
 
 ### Fixed
 - The realtime connection now recovers on its own. Previously, if a client's

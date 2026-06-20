@@ -183,6 +183,31 @@ export type QuoteSummary = {
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected';
 
+export type ConnectionStatusView = {
+  label: string;
+  // Ink color name for a degraded state; left undefined when healthy so the
+  // surrounding dim bar styling applies.
+  color?: 'yellow' | 'red';
+  dim: boolean;
+  bold: boolean;
+};
+
+// A healthy connection should stay quiet (dim, like the rest of the status bar);
+// a degraded one should be impossible to miss (bold + a warning color), because
+// a silently broken realtime connection looks identical to a working one.
+export function describeConnectionStatus(status: ConnectionStatus): ConnectionStatusView {
+  switch (status) {
+    case 'connected':
+      return { label: 'connected', dim: true, bold: false };
+    case 'connecting':
+      return { label: '⚠ connecting…', color: 'yellow', dim: false, bold: true };
+    case 'disconnected':
+      return { label: '⚠ disconnected', color: 'red', dim: false, bold: true };
+    case 'idle':
+      return { label: 'idle', dim: true, bold: false };
+  }
+}
+
 export type AppState = {
   rooms: RoomSummary[];
   activeRoomId?: string;

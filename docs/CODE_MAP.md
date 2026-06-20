@@ -55,7 +55,8 @@ src/
 │   │                         formatBeijingTime (ISO -> Asia/Shanghai "MM-DD HH:MM"),
 │   │                         formatActivityLine (kind='system' room-activity line text),
 │   │                         computePresenceTransitions (online/offline diff -> joined/left),
-│   │                         mergeChatTimeline (messages + ephemeral activityByRoom by time)
+│   │                         mergeChatTimeline (messages + ephemeral activityByRoom by time),
+│   │                         describeConnectionStatus (dim when connected, bold yellow/red when degraded)
 │   ├── terminal-focus.ts     [L1/L2] xterm focus reporting (DECSET 1004): enable/parse
 │   │                         CSI I/O so the app knows if its tab is focused
 │   └── loading-animation.ts  [L1] spinner frames + busy-elapsed timer

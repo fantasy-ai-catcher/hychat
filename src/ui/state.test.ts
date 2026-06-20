@@ -5,6 +5,7 @@ import {
   computeMemberStatuses,
   computePresenceTransitions,
   createInitialAppState,
+  describeConnectionStatus,
   formatActivityLine,
   formatBeijingTime,
   layoutMemberGrid,
@@ -362,6 +363,32 @@ describe('UI state reducer', () => {
         status: 'connected'
       }).connectionStatus
     ).toBe('connected');
+  });
+});
+
+describe('describeConnectionStatus', () => {
+  it('keeps a healthy connection calm', () => {
+    expect(describeConnectionStatus('connected')).toEqual({
+      label: 'connected',
+      dim: true,
+      bold: false
+    });
+  });
+
+  it('makes a degraded connection prominent so the user notices', () => {
+    const connecting = describeConnectionStatus('connecting');
+    expect(connecting.color).toBe('yellow');
+    expect(connecting.dim).toBe(false);
+    expect(connecting.bold).toBe(true);
+
+    const disconnected = describeConnectionStatus('disconnected');
+    expect(disconnected.color).toBe('red');
+    expect(disconnected.dim).toBe(false);
+    expect(disconnected.bold).toBe(true);
+  });
+
+  it('treats the pre-connection idle state as calm', () => {
+    expect(describeConnectionStatus('idle').dim).toBe(true);
   });
 });
 

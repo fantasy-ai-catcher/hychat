@@ -30,6 +30,7 @@ import {
   buildWelcomeLines,
   computeMemberStatuses,
   createInitialAppState,
+  describeConnectionStatus,
   layoutMemberGrid,
   mergeChatTimeline,
   resolveShellView
@@ -559,6 +560,7 @@ export function TopInfoPanel({
 }: TopInfoPanelProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
+  const connectionView = describeConnectionStatus(state.connectionStatus);
   const members = selectMembers(state, roomId, currentUserId, currentUserActive);
   const memberGrid = layoutMemberGrid(members, terminalWidth);
   // One shared cell width keeps every grid column aligned across rows.
@@ -580,7 +582,14 @@ export function TopInfoPanel({
       <Text bold>
         HyChat {activeRoom ? `# ${activeRoom.name}` : 'No room'}{' '}
         <Text dimColor>
-          {userLabel ?? '-'} {userRole ?? '-'} {state.connectionStatus}
+          {userLabel ?? '-'} {userRole ?? '-'}{' '}
+        </Text>
+        <Text
+          color={connectionView.color}
+          dimColor={connectionView.dim}
+          bold={connectionView.bold}
+        >
+          {connectionView.label}
         </Text>
       </Text>
       {!showMembers ? null : members.length === 0 ? (
@@ -744,12 +753,15 @@ export type StatusBarProps = {
 // is scrolled up, it also shows how to jump back to the latest.
 export function StatusBar({ state, userLabel, userRole, scrolledLines = 0 }: StatusBarProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
+  const connection = describeConnectionStatus(state.connectionStatus);
 
   return (
     <Box flexDirection="row" flexShrink={0}>
       <Text dimColor>
         {userLabel ?? '-'} {userRole ?? '-'} | room {activeRoom?.name ?? '-'} |{' '}
-        {state.connectionStatus}
+      </Text>
+      <Text color={connection.color} dimColor={connection.dim} bold={connection.bold}>
+        {connection.label}
       </Text>
       {scrolledLines > 0 ? (
         <Text color="yellow"> ↑ {scrolledLines} more · PageDown/Enter for latest</Text>
