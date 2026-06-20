@@ -252,6 +252,7 @@ describe('App', () => {
             senderId: 'user-1',
             senderName: 'liudong',
             senderColor: 'rose',
+            kind: 'text',
             body: 'hello',
             createdAt: '2026-06-06T08:00:00.000Z'
           }
@@ -267,6 +268,7 @@ describe('App', () => {
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
       activeByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
       typingByRoom: {},
+      activityByRoom: {},
       watchlistByRoom: { 'room-1': ['AAPL.US', '0700.HK', '600519.CN'] },
       quotesBySymbol: {
         'AAPL.US': {
@@ -313,6 +315,7 @@ describe('App', () => {
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
       activeByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
       typingByRoom: {},
+      activityByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'
@@ -352,6 +355,7 @@ describe('App', () => {
       onlineByRoom: { 'room-1': ['user-1'] },
       activeByRoom: { 'room-1': ['user-1'] },
       typingByRoom: {},
+      activityByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'
@@ -395,6 +399,7 @@ describe('App', () => {
         'room-1': ['user-1', 'user-2', 'user-3', 'user-4', 'user-5']
       },
       typingByRoom: {},
+      activityByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'
@@ -425,6 +430,7 @@ describe('App', () => {
       onlineByRoom: {},
       activeByRoom: {},
       typingByRoom: {},
+      activityByRoom: {},
       watchlistByRoom: { 'room-1': ['AAPL.US', '0700.HK'] },
       quotesBySymbol: {
         'AAPL.US': { symbol: 'AAPL.US', price: 123, changePercent: 1.2, cacheStatus: 'hit' },
@@ -454,6 +460,7 @@ describe('App', () => {
             senderId: 'user-1',
             senderName: 'liudong',
             senderColor: 'rose',
+            kind: 'text',
             body: 'hello',
             createdAt: '2026-06-06T08:00:00.000Z'
           }
@@ -463,6 +470,7 @@ describe('App', () => {
       onlineByRoom: {},
       activeByRoom: {},
       typingByRoom: {},
+      activityByRoom: {},
       watchlistByRoom: {},
       quotesBySymbol: {},
       connectionStatus: 'connected'
@@ -565,6 +573,7 @@ describe('MessageViewport timestamps', () => {
       senderId: 'user-1',
       senderName: 'liudong',
       senderColor: 'rose',
+      kind: 'text' as const,
       body: 'hello',
       // 08:00 UTC -> 16:00 Beijing.
       createdAt: '2026-06-06T08:00:00.000Z'
@@ -582,5 +591,31 @@ describe('MessageViewport timestamps', () => {
     const text = collectText(MessageViewport({ messages, height: 10 }));
     expect(text).not.toContain('16:00');
     expect(text).toContain('liudong:');
+  });
+});
+
+describe('MessageViewport system messages', () => {
+  const systemMessage = {
+    id: 'sys-1',
+    roomId: 'room-1',
+    senderId: 'user-2',
+    senderName: 'alice',
+    senderColor: 'cyan',
+    kind: 'system' as const,
+    body: 'added AAPL.US',
+    metadata: { event: 'watch_add', symbol: 'AAPL.US' },
+    createdAt: '2026-06-06T08:00:00.000Z'
+  };
+
+  it('renders an activity line with the actor and event, not a "name:" chat line', () => {
+    const text = collectText(MessageViewport({ messages: [systemMessage], height: 10 }));
+    expect(text).toContain('alice added AAPL.US');
+    expect(text).not.toContain('alice:');
+  });
+
+  it('renders the activity line dimmed so it reads as a system note', () => {
+    const elements = collectTextElements(MessageViewport({ messages: [systemMessage], height: 10 }));
+    const line = elements.find((element) => collectText(element).includes('added AAPL.US'));
+    expect(line?.props.dimColor).toBe(true);
   });
 });

@@ -5,15 +5,64 @@ export type RoomSummary = {
   isMember?: boolean;
 };
 
+// `text` is a chat line typed by a user; `system` is a room-activity line
+// (joined/left/added a stock/…) written server-side. New activity types only
+// add a new `kind === 'system'` row — see formatActivityLine.
+export type ChatMessageKind = 'text' | 'system';
+
 export type ChatMessage = {
   id: string;
   roomId: string;
   senderId: string;
   senderName?: string;
   senderColor?: string;
+  kind: ChatMessageKind;
   body: string;
+  // Structured event payload for system messages (e.g. { event, symbol }). Kept
+  // generic so a future renderer can special-case a type without a schema change.
+  metadata?: Record<string, unknown>;
   createdAt: string;
 };
+
+// Render a system/activity message as one line. The actor is `senderName` and
+// the predicate ("joined the room", "added AAPL.US") is composed in `body`, so a
+// new activity type needs no client change here. This is the single place to
+// branch on `metadata.event` if a type ever needs custom wording.
+export function formatActivityLine(message: ChatMessage): string {
+  const name = message.senderName ?? message.senderId;
+  return message.body ? `${name} ${message.body}` : name;
+}
+
+// Diff two presence snapshots (online user ids) into who just arrived and who
+// just left, excluding the current user (we never announce our own coming/going
+// to ourselves). Pure, so the chat session can turn the ids into activity lines.
+export function computePresenceTransitions(
+  previous: string[],
+  current: string[],
+  selfId?: string
+): { arrivedUserIds: string[]; leftUserIds: string[] } {
+  const before = new Set(previous);
+  const after = new Set(current);
+  return {
+    arrivedUserIds: current.filter((id) => id !== selfId && !before.has(id)),
+    leftUserIds: previous.filter((id) => id !== selfId && !after.has(id))
+  };
+}
+
+// Interleave persistent chat/system messages with ephemeral activity lines
+// (presence online/offline) into one time-ordered timeline for the viewport.
+// Stable sort by timestamp; ties keep messages ahead of activity.
+export function mergeChatTimeline(
+  messages: ChatMessage[],
+  activity: ChatMessage[]
+): ChatMessage[] {
+  if (activity.length === 0) {
+    return messages;
+  }
+  return [...messages, ...activity].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+}
 
 export type RoomMemberSummary = {
   roomId: string;
@@ -93,6 +142,10 @@ export type AppState = {
   onlineByRoom: Record<string, string[]>;
   activeByRoom: Record<string, string[]>;
   typingByRoom: Record<string, string[]>;
+  // Ephemeral, client-only activity lines (presence online/offline) per room.
+  // Not loaded from the DB and not persisted; cleared on leave. Merged with
+  // messages for display via mergeChatTimeline.
+  activityByRoom: Record<string, ChatMessage[]>;
   watchlistByRoom: Record<string, string[]>;
   quotesBySymbol: Record<string, QuoteSummary>;
   connectionStatus: ConnectionStatus;
@@ -109,6 +162,7 @@ export type AppAction =
   | { type: 'typing-started'; roomId: string; userId: string }
   | { type: 'typing-stopped'; roomId: string; userId: string }
   | { type: 'message-received'; message: ChatMessage }
+  | { type: 'activity-added'; roomId: string; activity: ChatMessage }
   | { type: 'watchlist-updated'; roomId: string; symbols: string[] }
   | { type: 'quotes-updated'; quotes: QuoteSummary[] }
   | { type: 'connection-changed'; status: ConnectionStatus };
@@ -121,6 +175,7 @@ export function createInitialAppState(): AppState {
     onlineByRoom: {},
     activeByRoom: {},
     typingByRoom: {},
+    activityByRoom: {},
     watchlistByRoom: {},
     quotesBySymbol: {},
     connectionStatus: 'idle'
@@ -181,6 +236,10 @@ export function formatBeijingTime(iso: string): string {
   return `${part('month')}-${part('day')} ${part('hour')}:${part('minute')}`;
 }
 
+// Ephemeral presence activity lines are kept only for display; cap the per-room
+// history so repeated online/offline churn can't grow state unbounded.
+const activityHistoryLimit = 50;
+
 export function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'rooms-loaded':
@@ -191,12 +250,14 @@ export function reducer(state: AppState, action: AppAction): AppState {
       const { [action.roomId]: _online, ...onlineByRoom } = state.onlineByRoom;
       const { [action.roomId]: _active, ...activeByRoom } = state.activeByRoom;
       const { [action.roomId]: _typing, ...typingByRoom } = state.typingByRoom;
+      const { [action.roomId]: _activity, ...activityByRoom } = state.activityByRoom;
       return {
         ...state,
         activeRoomId: state.activeRoomId === action.roomId ? undefined : state.activeRoomId,
         onlineByRoom,
         activeByRoom,
-        typingByRoom
+        typingByRoom,
+        activityByRoom
       };
     }
     case 'messages-loaded':
@@ -292,6 +353,18 @@ export function reducer(state: AppState, action: AppAction): AppState {
           ]
         }
       };
+    case 'activity-added': {
+      const current = state.activityByRoom[action.roomId] ?? [];
+      return {
+        ...state,
+        activityByRoom: {
+          ...state.activityByRoom,
+          // Cap the ephemeral log so a chatty presence churn can't grow it without
+          // bound; only the most recent lines matter.
+          [action.roomId]: [...current, action.activity].slice(-activityHistoryLimit)
+        }
+      };
+    }
     case 'watchlist-updated':
       return {
         ...state,

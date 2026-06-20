@@ -30,6 +30,7 @@ src/
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
 ├── ui/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText;
+│   │                         MessageViewport renders text vs kind='system' activity lines;
 │   │                         Ctrl+T toggles per-message Beijing-time timestamps;
 │   │                         resolveEditorAction maps keypresses -> editor actions
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
@@ -37,7 +38,10 @@ src/
 │   │                         readline-style, code-point aware)
 │   ├── state.ts              [L1] UI state types, reducer, welcome lines,
 │   │                         computeMemberStatuses (active/online/offline + typing projection),
-│   │                         formatBeijingTime (ISO -> Asia/Shanghai "MM-DD HH:MM")
+│   │                         formatBeijingTime (ISO -> Asia/Shanghai "MM-DD HH:MM"),
+│   │                         formatActivityLine (kind='system' room-activity line text),
+│   │                         computePresenceTransitions (online/offline diff -> joined/left),
+│   │                         mergeChatTimeline (messages + ephemeral activityByRoom by time)
 │   ├── terminal-focus.ts     [L1/L2] xterm focus reporting (DECSET 1004): enable/parse
 │   │                         CSI I/O so the app knows if its tab is focused
 │   └── loading-animation.ts  [L1] spinner frames + busy-elapsed timer
@@ -53,8 +57,10 @@ src/
     └── provider.ts           stock provider adapter contract / types
 
 supabase/
-├── migrations/               schema, RLS, RPCs (identity, invite codes, open rooms, …);
-│                             newest migration is the source of truth
+├── migrations/               schema, RLS, RPCs (identity, invite codes, open rooms,
+│                             room_watchlist add/remove system-message trigger, …);
+│                             room enter/leave activity is client-side presence,
+│                             not a DB trigger; newest migration is source of truth
 └── functions/
     ├── get-stock-quotes/
     │   └── index.ts          quote Edge Function (JWT + active-profile check, throttle)

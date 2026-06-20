@@ -43,6 +43,16 @@ const roomInvitesMigration = readFileSync(
   'utf8'
 ).toLowerCase();
 
+const activityMessagesMigration = readFileSync(
+  'supabase/migrations/20260620120000_room_activity_messages.sql',
+  'utf8'
+).toLowerCase();
+
+const dropMemberActivityMigration = readFileSync(
+  'supabase/migrations/20260620130000_drop_member_activity_trigger.sql',
+  'utf8'
+).toLowerCase();
+
 describe('initial Supabase schema migration', () => {
   it('creates the core chat and stock tables', () => {
     for (const table of [
@@ -178,6 +188,34 @@ describe('initial Supabase schema migration', () => {
     expect(minimumGrantsMigration).toContain('grant select on public.stock_quotes to authenticated');
     expect(minimumGrantsMigration).toContain('alter default privileges for role postgres in schema public');
     expect(minimumGrantsMigration).not.toContain('to anon;');
+  });
+
+  it('logs watchlist add/remove as system messages via a trigger', () => {
+    expect(activityMessagesMigration).toContain(
+      'create or replace function private.log_room_watchlist_activity'
+    );
+    expect(activityMessagesMigration).toContain(
+      'after insert or delete on public.room_watchlist'
+    );
+    // SECURITY DEFINER so it can insert the message regardless of the actor's RLS.
+    expect(activityMessagesMigration).toContain('security definer');
+    expect(activityMessagesMigration).toContain("'system'");
+    expect(activityMessagesMigration).toContain("'watch_add'");
+    expect(activityMessagesMigration).toContain("'watch_remove'");
+    // Best-effort: logging must never abort the underlying change.
+    expect(activityMessagesMigration).toContain('exception when others then');
+  });
+
+  it('drops the membership activity trigger (room enter/leave moved to presence)', () => {
+    // Room enter/leave is now ephemeral presence in the client, so the
+    // membership-row trigger is removed; the watchlist trigger is untouched.
+    expect(dropMemberActivityMigration).toContain(
+      'drop trigger if exists log_room_member_activity on public.room_members'
+    );
+    expect(dropMemberActivityMigration).toContain(
+      'drop function if exists private.log_room_member_activity'
+    );
+    expect(dropMemberActivityMigration).not.toContain('log_room_watchlist_activity');
   });
 
   it('enables realtime replication for chat messages and watchlist changes', () => {

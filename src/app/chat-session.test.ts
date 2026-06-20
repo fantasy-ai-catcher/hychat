@@ -782,6 +782,44 @@ describe('createChatSession', () => {
     expect(latest?.state.typingByRoom['room-1']).toEqual([]);
   });
 
+  it('announces presence arrivals and departures as ephemeral activity lines', async () => {
+    const { service } = createService();
+    let presenceHandler: ((onlineUserIds: string[]) => void) | undefined;
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        presenceHandler = handlers.onPresenceChange;
+        return { unsubscribe: vi.fn(), sendFocus: vi.fn() };
+      })
+    };
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({
+      service,
+      realtime,
+      onSnapshotChange: (snapshot) => {
+        latest = snapshot;
+      }
+    });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    // First sync is the baseline (who is already here): no announcement.
+    presenceHandler?.(['user-1']);
+    expect(latest?.state.activityByRoom['room-1'] ?? []).toEqual([]);
+
+    // user-2 (alice) appears -> "alice joined the room".
+    presenceHandler?.(['user-1', 'user-2']);
+    // ...then leaves -> "alice left the room". The current user (user-1) is never
+    // announced to themselves.
+    presenceHandler?.(['user-1']);
+
+    const lines = latest?.state.activityByRoom['room-1'] ?? [];
+    expect(lines.map((line) => ({ name: line.senderName, body: line.body, kind: line.kind }))).toEqual([
+      { name: 'alice', body: 'joined the room', kind: 'system' },
+      { name: 'alice', body: 'left the room', kind: 'system' }
+    ]);
+  });
+
   it('throttles outgoing typing broadcasts', async () => {
     const { service } = createService();
     const sendTyping = vi.fn();
@@ -863,6 +901,27 @@ describe('createChatSession', () => {
       method: 'addWatchSymbol',
       args: [{ roomId: 'room-1', symbol: 'AAPL.US', addedBy: 'user-1' }]
     });
+  });
+
+  it('removes a symbol without a quote refresh so the panel updates at once', async () => {
+    const { service, calls } = createService();
+    const session = createChatSession({ service });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    // Only the remove itself should matter here, not the join's quote refresh.
+    calls.length = 0;
+
+    const snapshot = await session.handleLine('/watch remove AAPL.US');
+
+    expect(snapshot.statusText).toBe('Removed AAPL.US.');
+    expect(calls).toContainEqual({
+      method: 'removeWatchSymbol',
+      args: ['room-1', 'AAPL.US']
+    });
+    // Removing leaves other quotes untouched, so it must not hit the slow quote
+    // Edge Function — that coupling is what made a removed stock linger on screen.
+    expect(calls.some((call) => call.method === 'getQuotes')).toBe(false);
   });
 
   it('reports the failure reason when /stock cannot load a quote', async () => {
