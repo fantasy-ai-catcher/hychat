@@ -8,6 +8,13 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- On startup HyChat now checks GitHub for the latest released version and refuses
+  to launch when you are on an older one — printing `brew update && brew upgrade
+  hychat` — so everyone stays on a build that matches the current Supabase schema.
+  If the check cannot reach GitHub it also stops (rather than guessing). Set
+  `HYCHAT_SKIP_UPDATE_CHECK=1` to bypass it.
+
 ## [0.2.0] - 2026-06-20
 
 ### Changed

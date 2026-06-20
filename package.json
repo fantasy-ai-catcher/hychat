@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "dev": "tsx src/index.ts",
+    "dev": "HYCHAT_SKIP_UPDATE_CHECK=1 tsx src/index.ts",
     "dev:login": "node scripts/dev-login.mjs",
     "dev:tmux": "bash scripts/dev-tmux.sh",
     "pack:brew": "node scripts/build-homebrew-release.mjs",

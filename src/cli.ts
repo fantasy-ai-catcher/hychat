@@ -12,6 +12,7 @@ import {
   getProfileSessionPath,
   JsonFileStorage
 } from './app/session-storage.js';
+import { runUpdateGate } from './app/update-check.js';
 import { loadEnv, parseEnv } from './config/env.js';
 import { createHychatSupabaseClient } from './supabase/client.js';
 import { App } from './ui/App.js';
@@ -119,6 +120,22 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       console.log(line);
     }
     process.exitCode = report.ok ? 0 : 1;
+    return;
+  }
+
+  // Gate entry on running the latest release: the client and the Supabase
+  // schema move together, so an out-of-date binary can silently break. On an
+  // older version — or when we cannot reach GitHub to confirm — print the
+  // update command and refuse to launch (bypass with HYCHAT_SKIP_UPDATE_CHECK).
+  const gate = await runUpdateGate({
+    currentVersion: getCliVersion(),
+    env: options.env ?? process.env
+  });
+  if (!gate.allow) {
+    for (const line of gate.lines) {
+      console.error(line);
+    }
+    process.exitCode = 1;
     return;
   }
 
