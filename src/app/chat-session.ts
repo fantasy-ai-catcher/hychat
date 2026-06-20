@@ -898,6 +898,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
         }
 
         user = await options.service.updateProfileColor(command.color);
+        // Reflect the new color in the member panel right away, without waiting
+        // for our next message to carry the snapshot.
+        apply({ type: 'member-color-changed', userId: user.id, color: user.displayColor });
         statusText = `Color set to ${user.displayColor}.`;
         return;
       }

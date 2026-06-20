@@ -72,6 +72,25 @@ export type RoomMemberSummary = {
   role: 'owner' | 'member';
 };
 
+// Set a member's panel color, returning the same array reference when nothing
+// changes (the member is absent or already that color) so the reducer can skip
+// a needless state update.
+function withMemberColor(
+  members: RoomMemberSummary[],
+  userId: string,
+  color: string
+): RoomMemberSummary[] {
+  let changed = false;
+  const next = members.map((member) => {
+    if (member.userId !== userId || member.displayColor === color) {
+      return member;
+    }
+    changed = true;
+    return { ...member, displayColor: color };
+  });
+  return changed ? next : members;
+}
+
 // Three presence levels:
 //   active  — connected and the terminal tab is focused
 //   online  — connected but the tab is unfocused (or focus is undetectable)
@@ -192,6 +211,7 @@ export type AppAction =
   | { type: 'typing-started'; roomId: string; userId: string }
   | { type: 'typing-stopped'; roomId: string; userId: string }
   | { type: 'message-received'; message: ChatMessage }
+  | { type: 'member-color-changed'; userId: string; color: string }
   | { type: 'activity-added'; roomId: string; activity: ChatMessage }
   | { type: 'watchlist-updated'; roomId: string; symbols: string[] }
   | { type: 'quotes-updated'; quotes: QuoteSummary[] }
@@ -364,25 +384,47 @@ export function reducer(state: AppState, action: AppAction): AppState {
         }
       };
     }
-    case 'message-received':
+    case 'message-received': {
+      const { roomId, senderId, senderColor, kind } = action.message;
       if (
-        (state.messagesByRoom[action.message.roomId] ?? []).some(
+        (state.messagesByRoom[roomId] ?? []).some(
           (message) => message.id === action.message.id
         )
       ) {
         return state;
       }
 
+      // A text message carries the sender's current color snapshot, so keep the
+      // member panel in step with it (the panel otherwise only refreshes on
+      // join). System/activity lines never recolor anyone.
+      const roomMembers = state.membersByRoom[roomId];
+      const membersByRoom =
+        kind === 'text' && senderColor && roomMembers
+          ? {
+              ...state.membersByRoom,
+              [roomId]: withMemberColor(roomMembers, senderId, senderColor)
+            }
+          : state.membersByRoom;
+
       return {
         ...state,
+        membersByRoom,
         messagesByRoom: {
           ...state.messagesByRoom,
-          [action.message.roomId]: [
-            ...(state.messagesByRoom[action.message.roomId] ?? []),
-            action.message
-          ]
+          [roomId]: [...(state.messagesByRoom[roomId] ?? []), action.message]
         }
       };
+    }
+    case 'member-color-changed': {
+      let changed = false;
+      const membersByRoom: Record<string, RoomMemberSummary[]> = {};
+      for (const [roomId, members] of Object.entries(state.membersByRoom)) {
+        const next = withMemberColor(members, action.userId, action.color);
+        membersByRoom[roomId] = next;
+        changed ||= next !== members;
+      }
+      return changed ? { ...state, membersByRoom } : state;
+    }
     case 'activity-added': {
       const current = state.activityByRoom[action.roomId] ?? [];
       return {
