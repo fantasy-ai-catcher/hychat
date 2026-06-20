@@ -20,17 +20,15 @@ All notable changes to HyChat are recorded here. The format loosely follows
 - `Ctrl+S` shows/hides the whole header panel (members + stocks) so you can
   reclaim that space for chat.
 
-### Fixed
-- The realtime connection now recovers on its own. Previously, if a client's
-  channel dropped mid-session it stayed stuck on `connecting` — silently no
-  longer receiving messages and showing everyone (and itself, to others) as
-  offline. It now rebuilds the channel and re-announces presence automatically.
-
 ### Changed
 - Each watched stock now shows its symbol code (e.g. `7709.HK`) in a dim column
   to the right of its name.
 
 ### Fixed
+- The realtime connection now recovers on its own. Previously, if a client's
+  channel dropped mid-session it stayed stuck on `connecting` — silently no
+  longer receiving messages and showing everyone (and itself, to others) as
+  offline. It now rebuilds the channel and re-announces presence automatically.
 - Changing your color with `/color set` now updates your name in the **Members**
   header panel too, not just on your chat messages. Your own change shows
   immediately; others' colors update when their next message arrives.
