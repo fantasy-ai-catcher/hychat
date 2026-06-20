@@ -2,6 +2,7 @@ import { parseChatInput, type ParsedChatInput } from '../chat/commands.js';
 import { parseCanonicalSymbol } from '../stocks/symbols.js';
 import {
   computeMemberStatuses,
+  computePresenceTransitions,
   createInitialAppState,
   reducer,
   type AppState,
@@ -325,6 +326,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
   // The local terminal's focus, mirrored into presence so peers can tell an
   // active member (tab focused) from one who is merely connected.
   let currentFocus: 'active' | 'online' = 'active';
+  // The first presence sync after joining is the baseline (who is already here);
+  // only later changes become "joined/left" activity lines. Reset on each join.
+  let presenceBaselineEstablished = false;
 
   function clearTypingTimers(): void {
     for (const timer of typingTimers.values()) {
@@ -372,10 +376,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
     return symbols;
   }
 
-  async function loadRoomData(roomId: string): Promise<void> {
+  // Re-read the room (messages/watchlist/members), reflect it right away, then
+  // refresh the remaining symbols' quotes in the background. Quote fetches hit a
+  // slow Edge Function, so they must never gate the panel update — e.g. a removed
+  // stock has to disappear at once, not after the refresh. Used by the realtime
+  // watchlist handler, where a watchlist change may be an add or a remove.
+  async function reloadRoomThenRefreshQuotes(roomId: string): Promise<void> {
     const symbols = await loadRoomSnapshot(roomId);
+    emitSnapshotChange();
     if (symbols.length > 0) {
-      await refreshQuotes(symbols, false);
+      void refreshQuotes(symbols, false).then(emitSnapshotChange);
     }
   }
 
@@ -428,9 +438,57 @@ export function createChatSession(options: CreateChatSessionOptions) {
     apply({ type: 'typing-stopped', roomId, userId });
   }
 
+  // Append an ephemeral presence activity line ("X joined/left the room"). It
+  // reuses the system-message shape so it renders like any activity line, but it
+  // is client-only: never persisted, gone on reload, cleared on leave.
+  function addPresenceActivity(
+    roomId: string,
+    userId: string,
+    body: string,
+    event: string
+  ): void {
+    const member = (state.membersByRoom[roomId] ?? []).find((m) => m.userId === userId);
+    const createdAt = new Date().toISOString();
+    apply({
+      type: 'activity-added',
+      roomId,
+      activity: {
+        id: `presence:${userId}:${createdAt}`,
+        roomId,
+        senderId: userId,
+        senderName: member?.displayName ?? userId,
+        senderColor: member?.displayColor,
+        kind: 'system',
+        body,
+        metadata: { event },
+        createdAt
+      }
+    });
+  }
+
+  function announcePresenceTransitions(
+    roomId: string,
+    previous: string[],
+    current: string[]
+  ): void {
+    const { arrivedUserIds, leftUserIds } = computePresenceTransitions(
+      previous,
+      current,
+      user?.id
+    );
+    for (const userId of arrivedUserIds) {
+      addPresenceActivity(roomId, userId, 'joined the room', 'presence_online');
+    }
+    for (const userId of leftUserIds) {
+      addPresenceActivity(roomId, userId, 'left the room', 'presence_offline');
+    }
+  }
+
   async function joinRoom(roomId: string): Promise<void> {
     subscription?.unsubscribe();
     clearTypingTimers();
+    // A fresh room: the next presence sync is its baseline, not a wave of joins.
+    presenceBaselineEstablished = false;
     apply({ type: 'room-joined', roomId });
     // Load messages/members/watchlist first (so messages-loaded cannot clobber
     // a realtime message), then subscribe so presence is announced before the
@@ -446,15 +504,23 @@ export function createChatSession(options: CreateChatSessionOptions) {
         emitSnapshotChange();
       },
       onWatchlistChange() {
-        void loadRoomData(roomId).then(emitSnapshotChange);
+        void reloadRoomThenRefreshQuotes(roomId);
       },
       onMembersChange() {
         void loadMembers(roomId).then(emitSnapshotChange);
       },
       onPresenceChange(onlineUserIds) {
+        const previous = state.onlineByRoom[roomId] ?? [];
         apply({ type: 'presence-synced', roomId, userIds: onlineUserIds });
-        // Membership changed, so re-announce our focus — a member who just
-        // joined would otherwise not learn the focus of those already here.
+        // First sync is the baseline; afterwards, arrivals/departures become
+        // ephemeral "joined/left the room" activity lines.
+        if (presenceBaselineEstablished) {
+          announcePresenceTransitions(roomId, previous, onlineUserIds);
+        } else {
+          presenceBaselineEstablished = true;
+        }
+        // Presence changed, so re-announce our focus — a member who just joined
+        // would otherwise not learn the focus of those already here.
         subscription?.sendFocus?.(currentFocus === 'active');
         emitSnapshotChange();
       },
@@ -698,7 +764,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
           symbol,
           addedBy: currentUser.id
         });
-        await loadRoomData(roomId);
+        await loadRoomSnapshot(roomId);
+        // Fetch just the new symbol's quote so the price shows on add; the other
+        // symbols are already on screen and unchanged.
+        await refreshQuotes([symbol], false);
         statusText = `Watching ${symbol}.`;
         return;
       }
@@ -708,7 +777,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
         const roomId = requireActiveRoom();
         const symbol = normalizeSymbol(command.symbol);
         await options.service.removeWatchSymbol(roomId, symbol);
-        await loadRoomData(roomId);
+        // Removing a symbol leaves the others' quotes untouched, so just reflect
+        // the new watchlist — no quote refresh, so it disappears immediately.
+        await loadRoomSnapshot(roomId);
         statusText = `Removed ${symbol}.`;
         return;
       }
@@ -730,7 +801,8 @@ export function createChatSession(options: CreateChatSessionOptions) {
           return;
         }
         await options.service.addWatchSymbol({ roomId, symbol, addedBy: currentUser.id });
-        await loadRoomData(roomId);
+        // The quote was just fetched above, so only the watchlist needs reflecting.
+        await loadRoomSnapshot(roomId);
         statusText = `Watching ${symbol}.`;
         return;
       }
@@ -906,7 +978,9 @@ function toChatMessage(message: ChatMessageRow): ChatMessage {
     senderId: message.sender_id,
     senderName: message.sender_display_name ?? message.sender_id,
     senderColor: message.sender_display_color,
+    kind: message.kind,
     body: message.body,
+    metadata: message.metadata,
     createdAt: message.created_at
   };
 }

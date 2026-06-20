@@ -28,7 +28,9 @@ import {
   buildWelcomeLines,
   computeMemberStatuses,
   createInitialAppState,
+  formatActivityLine,
   formatBeijingTime,
+  mergeChatTimeline,
   resolveShellView
 } from './state.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
@@ -256,7 +258,9 @@ export function AppShell({
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
-  const messages = roomId ? state.messagesByRoom[roomId] ?? [] : [];
+  const messages = roomId
+    ? mergeChatTimeline(state.messagesByRoom[roomId] ?? [], state.activityByRoom[roomId] ?? [])
+    : [];
   const shellHeight = Math.max(height ?? process.stdout.rows ?? 24, 12);
   const topHeight = 5;
   const statusHeight = getStatusHeight(statusText);
@@ -448,16 +452,29 @@ export function MessageViewport({ messages, height, showTimestamps }: MessageVie
         <Text dimColor>No messages</Text>
       ) : (
         messages.map((message) => (
-          <Box key={message.id} flexDirection="row">
+          <Box
+            key={message.id}
+            flexDirection="row"
+            // Room-activity notes sit centered, set apart from left-aligned chat.
+            justifyContent={message.kind === 'system' ? 'center' : 'flex-start'}
+          >
             {showTimestamps && (
               <Text color="gray" dimColor>
                 {formatBeijingTime(message.createdAt)}{' '}
               </Text>
             )}
-            <Text color={resolveProfileColor(message.senderColor)}>
-              {message.senderName ?? message.senderId}:
-            </Text>
-            <Text> {message.body}</Text>
+            {message.kind === 'system' ? (
+              // Room-activity line (joined/left/watchlist change): a dim note,
+              // visually distinct from chat. See formatActivityLine.
+              <Text dimColor>· {formatActivityLine(message)}</Text>
+            ) : (
+              <>
+                <Text color={resolveProfileColor(message.senderColor)}>
+                  {message.senderName ?? message.senderId}:
+                </Text>
+                <Text> {message.body}</Text>
+              </>
+            )}
           </Box>
         ))
       )}

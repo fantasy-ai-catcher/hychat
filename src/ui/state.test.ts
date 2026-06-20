@@ -3,11 +3,29 @@ import { describe, expect, it } from 'vitest';
 import {
   buildWelcomeLines,
   computeMemberStatuses,
+  computePresenceTransitions,
   createInitialAppState,
+  formatActivityLine,
   formatBeijingTime,
+  mergeChatTimeline,
   reducer,
-  resolveShellView
+  resolveShellView,
+  type ChatMessage
 } from './state.js';
+
+function systemLine(overrides: Partial<ChatMessage>): ChatMessage {
+  return {
+    id: 'a1',
+    roomId: 'room-1',
+    senderId: 'user-2',
+    senderName: 'alice',
+    kind: 'system',
+    body: 'joined the room',
+    metadata: { event: 'presence_online' },
+    createdAt: '2026-06-06T08:00:00.000Z',
+    ...overrides
+  };
+}
 
 describe('UI state reducer', () => {
   it('loads rooms and joins a room', () => {
@@ -73,6 +91,7 @@ describe('UI state reducer', () => {
         roomId: 'room-1',
         senderId: 'user-1',
         senderName: 'liudong',
+        kind: 'text',
         body: 'hello',
         createdAt: '2026-06-06T08:00:00.000Z'
       }
@@ -87,6 +106,7 @@ describe('UI state reducer', () => {
       roomId: 'room-1',
       senderId: 'user-1',
       senderName: 'liudong',
+      kind: 'text' as const,
       body: 'hello',
       createdAt: '2026-06-06T08:00:00.000Z'
     };
@@ -112,6 +132,7 @@ describe('UI state reducer', () => {
         roomId: 'room-1',
         senderId: 'user-1',
         senderName: 'liudong',
+        kind: 'text',
         body: 'old',
         createdAt: '2026-06-06T08:00:00.000Z'
       }
@@ -126,6 +147,7 @@ describe('UI state reducer', () => {
           roomId: 'room-1',
           senderId: 'user-2',
           senderName: 'alice',
+          kind: 'text',
           body: 'new',
           createdAt: '2026-06-06T08:01:00.000Z'
         }
@@ -138,6 +160,7 @@ describe('UI state reducer', () => {
         roomId: 'room-1',
         senderId: 'user-2',
         senderName: 'alice',
+        kind: 'text',
         body: 'new',
         createdAt: '2026-06-06T08:01:00.000Z'
       }
@@ -209,6 +232,40 @@ describe('UI state reducer', () => {
     ]);
   });
 
+  it('appends ephemeral activity lines and clears them on leave', () => {
+    let state = reducer(createInitialAppState(), {
+      type: 'activity-added',
+      roomId: 'room-1',
+      activity: systemLine({ id: 'a1' })
+    });
+    state = reducer(state, {
+      type: 'activity-added',
+      roomId: 'room-1',
+      activity: systemLine({ id: 'a2', body: 'left the room' })
+    });
+
+    expect(state.activityByRoom['room-1']?.map((line) => line.id)).toEqual(['a1', 'a2']);
+
+    const left = reducer(state, { type: 'room-left', roomId: 'room-1' });
+    expect(left.activityByRoom['room-1']).toBeUndefined();
+  });
+
+  it('caps the ephemeral activity history', () => {
+    let state = createInitialAppState();
+    for (let i = 0; i < 60; i += 1) {
+      state = reducer(state, {
+        type: 'activity-added',
+        roomId: 'room-1',
+        activity: systemLine({ id: `a${i}` })
+      });
+    }
+
+    const lines = state.activityByRoom['room-1'] ?? [];
+    expect(lines).toHaveLength(50);
+    expect(lines[0]?.id).toBe('a10');
+    expect(lines.at(-1)?.id).toBe('a59');
+  });
+
   it('tracks connection status', () => {
     expect(
       reducer(createInitialAppState(), {
@@ -216,6 +273,91 @@ describe('UI state reducer', () => {
         status: 'connected'
       }).connectionStatus
     ).toBe('connected');
+  });
+});
+
+describe('computePresenceTransitions', () => {
+  it('reports who arrived and who left, excluding self', () => {
+    const result = computePresenceTransitions(
+      ['self', 'alice'],
+      ['self', 'bob'],
+      'self'
+    );
+    expect(result).toEqual({ arrivedUserIds: ['bob'], leftUserIds: ['alice'] });
+  });
+
+  it('never announces the current user, even on their own transition', () => {
+    expect(computePresenceTransitions([], ['self'], 'self')).toEqual({
+      arrivedUserIds: [],
+      leftUserIds: []
+    });
+    expect(computePresenceTransitions(['self'], [], 'self')).toEqual({
+      arrivedUserIds: [],
+      leftUserIds: []
+    });
+  });
+
+  it('returns nothing when the snapshot is unchanged', () => {
+    expect(computePresenceTransitions(['a', 'b'], ['b', 'a'])).toEqual({
+      arrivedUserIds: [],
+      leftUserIds: []
+    });
+  });
+});
+
+describe('mergeChatTimeline', () => {
+  it('interleaves messages and activity in timestamp order', () => {
+    const messages: ChatMessage[] = [
+      systemLine({ id: 'm1', kind: 'text', body: 'hi', createdAt: '2026-06-06T08:00:00.000Z' }),
+      systemLine({ id: 'm2', kind: 'text', body: 'bye', createdAt: '2026-06-06T08:02:00.000Z' })
+    ];
+    const activity: ChatMessage[] = [
+      systemLine({ id: 'a1', createdAt: '2026-06-06T08:01:00.000Z' })
+    ];
+
+    expect(mergeChatTimeline(messages, activity).map((line) => line.id)).toEqual([
+      'm1',
+      'a1',
+      'm2'
+    ]);
+  });
+
+  it('returns the messages unchanged when there is no activity', () => {
+    const messages: ChatMessage[] = [systemLine({ id: 'm1', kind: 'text' })];
+    expect(mergeChatTimeline(messages, [])).toBe(messages);
+  });
+});
+
+describe('formatActivityLine', () => {
+  function activity(overrides: Partial<ChatMessage>): ChatMessage {
+    return {
+      id: 'm1',
+      roomId: 'room-1',
+      senderId: 'user-1',
+      senderName: 'liudong',
+      kind: 'system',
+      body: 'joined the room',
+      metadata: { event: 'member_join' },
+      createdAt: '2026-06-06T08:00:00.000Z',
+      ...overrides
+    };
+  }
+
+  it('puts the actor name in front of the event predicate', () => {
+    expect(formatActivityLine(activity({}))).toBe('liudong joined the room');
+    expect(formatActivityLine(activity({ body: 'added AAPL.US' }))).toBe(
+      'liudong added AAPL.US'
+    );
+  });
+
+  it('falls back to the sender id when no display name is set', () => {
+    expect(formatActivityLine(activity({ senderName: undefined }))).toBe(
+      'user-1 joined the room'
+    );
+  });
+
+  it('renders just the actor when the body is empty', () => {
+    expect(formatActivityLine(activity({ body: '' }))).toBe('liudong');
   });
 });
 
