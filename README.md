@@ -40,10 +40,15 @@ Maintainer release steps live in [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
 
 ```bash
 pnpm install
-cp .env.example .env
 ```
 
-Fill in:
+The app ships with a baked-in Supabase connection (see `src/config/env.ts`), so
+`pnpm dev` runs without any `.env`. Only create one to point at a *different*
+Supabase project for development:
+
+```bash
+cp .env.example .env
+```
 
 ```text
 SUPABASE_URL=
@@ -146,27 +151,8 @@ Use `/members` inside a room to list every member with their role and selected p
 
 ## Supabase
 
-The database migrations are:
-
-```text
-supabase/migrations/20260606000000_initial_schema.sql
-supabase/migrations/20260609090028_nickname_invites.sql
-supabase/migrations/20260610072815_fix_start_profile_ambiguous_id.sql
-supabase/migrations/20260610073049_fix_start_profile_variable_conflict.sql
-supabase/migrations/20260610073307_allow_setup_start_before_invites.sql
-supabase/migrations/20260610073537_fix_invite_code_generation.sql
-supabase/migrations/20260610074931_list_room_members.sql
-supabase/migrations/20260610181000_profile_colors.sql
-supabase/migrations/20260610190000_harden_access_and_cleanup.sql
-supabase/migrations/20260610191500_minimum_data_api_grants.sql
-supabase/migrations/20260610192500_restrict_function_execute.sql
-supabase/migrations/20260610200000_room_invites_and_quota_guards.sql
-supabase/migrations/20260611110000_email_otp_identity.sql
-supabase/migrations/20260615120000_decouple_display_name.sql
-supabase/migrations/20260615130000_open_rooms.sql
-```
-
-It creates:
+Schema, RLS policies, and RPCs live in `supabase/migrations/`; the newest
+migration is the source of truth. The schema creates these tables:
 
 1. `profiles`
 2. `rooms`
@@ -180,7 +166,7 @@ All public app tables enable RLS. Tables exposed through the Data API include ex
 
 ## Stock Quotes
 
-Provider: Yahoo Finance (keyless `v8/finance/chart`). Symbols cover US
+Provider: Yahoo Finance (keyless `v7/finance/quote` batch endpoint). Symbols cover US
 (`AAPL`), Hong Kong (`0700.HK`), China A-shares (`600519.CN`), and Japan
 (`7203.JP`).
 

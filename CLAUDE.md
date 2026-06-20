@@ -95,6 +95,23 @@ Branch names must follow this convention:
 After implementation, run the required tests and verification commands on the
 branch. Merge back to `main` only after the user explicitly agrees.
 
+## Changelog & releasing
+
+HyChat ships to friends as a Homebrew formula (`brew install
+fantasy-ai-catcher/tap/hychat`). Full mechanics live in
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md).
+
+- **Record every user-facing change in `CHANGELOG.md`** under `## [Unreleased]`,
+  grouped by Added / Changed / Fixed / Removed, as part of the same change.
+  Skip purely internal churn that a friend would never notice.
+- **To cut a release**, from a clean `main` run
+  `pnpm release <patch|minor|major|x.y.z>`. It bumps `package.json`, moves the
+  `[Unreleased]` entries into a dated version section, builds the tarball +
+  formula, pushes `main`, tags `vX.Y.Z`, creates the GitHub release, and updates
+  the tap. Use `--dry-run` first to preview the version and notes.
+- Releasing requires `gh` authenticated and is gated behind explicit user
+  agreement, like any push to `main`.
+
 ## Supabase schema changes
 
 When a code change adds, removes, or renames Supabase database fields, tables,

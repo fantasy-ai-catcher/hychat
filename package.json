@@ -20,6 +20,7 @@
     "dev:tmux": "bash scripts/dev-tmux.sh",
     "pack:brew": "node scripts/build-homebrew-release.mjs",
     "prepack": "pnpm build",
+    "release": "node scripts/release.mjs",
     "start": "node dist/index.js",
     "test": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"

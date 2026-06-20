@@ -81,7 +81,9 @@ scripts/
 ├── dev-login.mjs             pre-log-in test accounts (no email/OTP) into --profile files
 ├── dev-tmux.sh               pnpm dev:tmux — two logged-in clients side by side in tmux
 ├── build.mjs                 build
-└── build-homebrew-release.mjs  homebrew release packaging
+├── build-homebrew-release.mjs  homebrew release packaging (tarball + filled formula)
+└── release.mjs               one-command release: version bump + changelog roll +
+                              pack + tag + GitHub release + tap update (--dry-run)
 
 docs/
 ├── CODE_MAP.md               this file
