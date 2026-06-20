@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-20
+
 ### Added
 - On startup HyChat now checks GitHub for the latest released version and refuses
   to launch when you are on an older one — printing `brew update && brew upgrade
