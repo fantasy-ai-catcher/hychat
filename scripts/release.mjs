@@ -102,18 +102,25 @@ if (!dryRun) {
   if (capture('git', ['status', '--porcelain'])) {
     fail('Working tree is not clean. Commit or stash changes first.');
   }
-  // An explicit token in the env is authoritative; trust it and skip the
-  // keychain probe below, which flakily reports "not authenticated" when gh
-  // reads a macOS-keychain-backed token with stdin detached.
+  // An explicit env token is authoritative. Otherwise ask gh for the token it
+  // would use and pass it down explicitly — `gh auth token` reads the stored
+  // (e.g. macOS-keychain) credential reliably, unlike `gh auth status`, which
+  // flakily reports "not authenticated" when run with stdin detached.
   if (!process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
+    let token = '';
     try {
-      capture('gh', ['auth', 'status'], { stdio: ['ignore', 'ignore', 'ignore'] });
+      token = capture('gh', ['auth', 'token'], { stdio: ['ignore', 'pipe', 'ignore'] });
     } catch {
+      token = '';
+    }
+    if (!token) {
       fail(
         'GitHub CLI is not authenticated. Run `gh auth login`, or set GH_TOKEN ' +
           '(e.g. `GH_TOKEN="$(gh auth token)" pnpm release ...`).'
       );
     }
+    // Hand the resolved token to the gh subcommands below via the environment.
+    process.env.GH_TOKEN = token;
   }
 }
 
