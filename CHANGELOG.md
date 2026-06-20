@@ -15,6 +15,10 @@ All notable changes to HyChat are recorded here. The format loosely follows
   preview). This changelog itself is the new release-notes source.
 
 ### Fixed
+- A transient network drop during a background refresh (e.g. when someone added
+  a stock) could crash the whole app to a raw error dump. Background reloads and
+  quote refreshes now fail quietly with a "Network error — check your connection
+  and try again." status hint, keeping the current view instead of crashing.
 - README: corrected the Yahoo endpoint (`v7/finance/quote`, not v8), replaced the
   stale hand-listed migrations with a pointer to `supabase/migrations/`, and
   clarified that `.env` is optional now that the Supabase connection is baked in.

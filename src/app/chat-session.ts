@@ -374,6 +374,20 @@ export function createChatSession(options: CreateChatSessionOptions) {
     options.onSnapshotChange?.(snapshot());
   }
 
+  // Realtime-triggered reloads and off-critical-path quote refreshes run
+  // fire-and-forget. A transient transport failure (e.g. `fetch failed` on a
+  // Wi-Fi blip) must never become an unhandled rejection that crashes the TUI:
+  // swallow it, surface a friendly hint, and keep whatever snapshot we had. The
+  // next realtime event re-runs the reload, so there is nothing to retry here.
+  function runBackground(task: () => Promise<unknown>): void {
+    void task().catch((error: unknown) => {
+      statusText = translateServiceError(
+        error instanceof Error ? error.message : 'Update failed.'
+      );
+      emitSnapshotChange();
+    });
+  }
+
   function apply(action: Parameters<typeof reducer>[1]): void {
     state = reducer(state, action);
   }
@@ -414,7 +428,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
     const symbols = await loadRoomSnapshot(roomId);
     emitSnapshotChange();
     if (symbols.length > 0) {
-      void refreshQuotes(symbols, false).then(emitSnapshotChange);
+      runBackground(() => refreshQuotes(symbols, false).then(emitSnapshotChange));
     }
   }
 
@@ -534,10 +548,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
         emitSnapshotChange();
       },
       onWatchlistChange() {
-        void reloadRoomThenRefreshQuotes(roomId);
+        runBackground(() => reloadRoomThenRefreshQuotes(roomId));
       },
       onMembersChange() {
-        void loadMembers(roomId).then(emitSnapshotChange);
+        runBackground(() => loadMembers(roomId).then(emitSnapshotChange));
       },
       onPresenceChange(onlineUserIds) {
         const previous = state.onlineByRoom[roomId] ?? [];
@@ -595,7 +609,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
     // Off the critical path: the room is already interactive and presence is
     // announced, so refresh quotes without blocking the join.
     if (symbols.length > 0) {
-      void refreshQuotes(symbols, false).then(emitSnapshotChange);
+      runBackground(() => refreshQuotes(symbols, false).then(emitSnapshotChange));
     }
   }
 
@@ -1062,6 +1076,12 @@ const serviceErrorMessages: Record<string, string> = {
 };
 
 function translateServiceError(message: string): string {
+  // Node's `fetch` reports transport-layer failures (offline, DNS, reset host)
+  // as `TypeError: fetch failed`. Show a friendly hint instead of the raw error.
+  if (/fetch failed|network|enotfound|econnrefused|econnreset|etimedout/i.test(message)) {
+    return 'Network error — check your connection and try again.';
+  }
+
   return serviceErrorMessages[message] ?? message;
 }
 

@@ -659,6 +659,66 @@ describe('createChatSession', () => {
     );
   });
 
+  it('does not crash and shows a network hint when a realtime watchlist reload fails', async () => {
+    const { service } = createService();
+    let watchlistHandler: (() => void) | undefined;
+    const onSnapshotChange = vi.fn();
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        watchlistHandler = handlers.onWatchlistChange;
+        return { unsubscribe: vi.fn() };
+      })
+    };
+    const session = createChatSession({ service, realtime, onSnapshotChange });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    // The reload's member fetch fails at the transport layer, like a Wi-Fi blip.
+    service.listMembers = async () => {
+      throw new Error('TypeError: fetch failed');
+    };
+    onSnapshotChange.mockClear();
+
+    // A bare unhandled rejection here used to crash the whole process.
+    expect(() => watchlistHandler?.()).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve));
+
+    const lastSnapshot = onSnapshotChange.mock.calls.at(-1)?.[0] as { statusText: string };
+    expect(lastSnapshot.statusText).toBe(
+      'Network error — check your connection and try again.'
+    );
+    // The previously loaded room data is kept, not wiped.
+    expect(lastSnapshot).toEqual(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          membersByRoom: expect.objectContaining({
+            'room-1': expect.arrayContaining([
+              expect.objectContaining({ displayName: 'liudong' })
+            ])
+          })
+        })
+      })
+    );
+  });
+
+  it('shows a friendly network hint when a foreground command hits fetch failed', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    service.addWatchSymbol = async () => {
+      throw new Error('TypeError: fetch failed');
+    };
+
+    const snapshot = (await session.handleLine('/watch add TSLA.US')) as { statusText: string };
+    expect(snapshot.statusText).toBe(
+      'Network error — check your connection and try again.'
+    );
+  });
+
   it('leaves the active room, unsubscribes, and returns to the room list', async () => {
     const { service, calls } = createService();
     const unsubscribe = vi.fn();
