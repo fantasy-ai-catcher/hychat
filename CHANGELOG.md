@@ -24,6 +24,11 @@ All notable changes to HyChat are recorded here. The format loosely follows
 - Each watched stock now shows its symbol code (e.g. `7709.HK`) in a dim column
   to the right of its name.
 
+### Fixed
+- Changing your color with `/color set` now updates your name in the **Members**
+  header panel too, not just on your chat messages. Your own change shows
+  immediately; others' colors update when their next message arrives.
+
 ## [0.3.0] - 2026-06-20
 
 ### Added

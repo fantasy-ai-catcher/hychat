@@ -47,7 +47,9 @@ src/
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
 │   │                         applyEditorAction (cursor move/word ops/kill/newline,
 │   │                         readline-style, code-point aware)
-│   ├── state.ts              [L1] UI state types, reducer, welcome lines,
+│   ├── state.ts              [L1] UI state types, reducer (member panel color stays in
+│   │                         step with each member's latest message snapshot +
+│   │                         member-color-changed for own /color set), welcome lines,
 │   │                         computeMemberStatuses (active/online/offline + typing projection),
 │   │                         memberGridColumns/layoutMemberGrid (header members 1/2/3-col grid),
 │   │                         formatBeijingTime (ISO -> Asia/Shanghai "MM-DD HH:MM"),

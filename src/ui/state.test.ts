@@ -235,6 +235,92 @@ describe('UI state reducer', () => {
     ]);
   });
 
+  it('syncs a member panel color from an incoming text message', () => {
+    let state = reducer(createInitialAppState(), {
+      type: 'members-loaded',
+      roomId: 'room-1',
+      members: [
+        { roomId: 'room-1', userId: 'user-1', displayName: 'bob', displayColor: 'white', role: 'member' }
+      ]
+    });
+
+    state = reducer(state, {
+      type: 'message-received',
+      message: {
+        id: 'message-1',
+        roomId: 'room-1',
+        senderId: 'user-1',
+        senderName: 'bob',
+        senderColor: 'cyan',
+        kind: 'text',
+        body: '1',
+        createdAt: '2026-06-06T08:00:00.000Z'
+      }
+    });
+
+    expect(state.membersByRoom['room-1']?.[0]?.displayColor).toBe('cyan');
+    // The message itself keeps its own snapshot color.
+    expect(state.messagesByRoom['room-1']?.[0]?.senderColor).toBe('cyan');
+  });
+
+  it('does not change member colors for system messages or unknown senders', () => {
+    const members = [
+      { roomId: 'room-1', userId: 'user-1', displayName: 'bob', displayColor: 'white', role: 'member' as const }
+    ];
+    let state = reducer(createInitialAppState(), {
+      type: 'members-loaded',
+      roomId: 'room-1',
+      members
+    });
+
+    // A system activity message must not recolor anyone.
+    state = reducer(state, {
+      type: 'message-received',
+      message: systemLine({ id: 's1', senderId: 'user-1', senderColor: 'red', kind: 'system' })
+    });
+    // A text message from a non-member changes nothing.
+    state = reducer(state, {
+      type: 'message-received',
+      message: {
+        id: 'm2',
+        roomId: 'room-1',
+        senderId: 'ghost',
+        senderName: 'ghost',
+        senderColor: 'pink',
+        kind: 'text',
+        body: 'hi',
+        createdAt: '2026-06-06T08:01:00.000Z'
+      }
+    });
+
+    expect(state.membersByRoom['room-1']?.[0]?.displayColor).toBe('white');
+  });
+
+  it('applies a color change to a member across every room', () => {
+    let state = reducer(createInitialAppState(), {
+      type: 'members-loaded',
+      roomId: 'room-1',
+      members: [
+        { roomId: 'room-1', userId: 'user-1', displayName: 'bob', displayColor: 'white', role: 'member' }
+      ]
+    });
+    state = reducer(state, {
+      type: 'members-loaded',
+      roomId: 'room-2',
+      members: [
+        { roomId: 'room-2', userId: 'user-1', displayName: 'bob', displayColor: 'white', role: 'member' },
+        { roomId: 'room-2', userId: 'user-2', displayName: 'alice', displayColor: 'pink', role: 'owner' }
+      ]
+    });
+
+    state = reducer(state, { type: 'member-color-changed', userId: 'user-1', color: 'cyan' });
+
+    expect(state.membersByRoom['room-1']?.[0]?.displayColor).toBe('cyan');
+    expect(state.membersByRoom['room-2']?.[0]?.displayColor).toBe('cyan');
+    // Other members are untouched.
+    expect(state.membersByRoom['room-2']?.[1]?.displayColor).toBe('pink');
+  });
+
   it('appends ephemeral activity lines and clears them on leave', () => {
     let state = reducer(createInitialAppState(), {
       type: 'activity-added',
