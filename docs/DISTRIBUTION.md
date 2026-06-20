@@ -25,25 +25,34 @@ Two **public** repositories under the `fantasy-ai-catcher` org:
 
 ## Releasing a new version
 
-1. Bump `version` in `package.json` (e.g. `0.1.0` → `0.1.1`).
-2. Build the tarball + formula:
+Record what changed under `## [Unreleased]` in `CHANGELOG.md` as you work. Then,
+from a clean `main` with `gh` authenticated:
 
-   ```bash
-   pnpm pack:brew
-   ```
+```bash
+pnpm release minor --dry-run   # preview the version + release notes
+pnpm release minor             # cut it (patch | minor | major | x.y.z)
+```
 
-   This runs `pnpm pack` into `dist/releases/hychat-<version>.tgz`, computes its
-   sha256, and writes a filled-in formula to `dist/homebrew/hychat.rb`.
-   `GITHUB_REPOSITORY` defaults to `fantasy-ai-catcher/hychat`; override it only
-   if the repo moves.
-3. Create a GitHub Release tagged `v<version>` and upload
-   `dist/releases/hychat-<version>.tgz` as a release asset. The formula's `url`
-   points at exactly this asset, so the tag, version, and filename must match
-   (the script already aligns them).
-4. Copy `dist/homebrew/hychat.rb` into the tap repo as `Formula/hychat.rb`,
-   then commit and push.
+`scripts/release.mjs` does the whole sequence:
+
+1. Bumps `version` in `package.json`.
+2. Moves the `[Unreleased]` changelog entries into a dated `[x.y.z]` section and
+   uses them as the GitHub release notes.
+3. Builds the tarball + formula via `pnpm pack:brew`
+   (`dist/releases/hychat-<version>.tgz` + `dist/homebrew/hychat.rb`).
+4. Commits, pushes `main`, and tags `v<version>`.
+5. Creates the GitHub Release with the tarball asset. The formula's `url` points
+   at exactly this asset, so tag, version, and filename stay aligned.
+6. Clones the tap, drops in `Formula/hychat.rb`, and pushes it.
 
 Friends then get the update with `brew upgrade hychat`.
+
+### Doing it by hand
+
+If you ever need to run the steps manually, the underlying command is
+`GITHUB_REPOSITORY=fantasy-ai-catcher/hychat pnpm pack:brew` to produce the
+tarball + formula, then `gh release create v<version> <tarball>` and copy the
+formula into the tap's `Formula/hychat.rb`.
 
 ## How the formula works
 
