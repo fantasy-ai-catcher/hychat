@@ -46,9 +46,16 @@ describe('CLI scaffold', () => {
     }
   });
 
-  it('reports missing runtime env in doctor output', () => {
-    expect(createDoctorReport({}).ok).toBe(false);
-    expect(createDoctorReport({}).lines.join('\n')).toContain('SUPABASE_URL');
+  it('reports a healthy runtime via baked-in defaults when no env is set', () => {
+    const report = createDoctorReport({});
+    expect(report.ok).toBe(true);
+    expect(report.lines.join('\n')).toContain('Supabase URL:');
+  });
+
+  it('reports invalid runtime env in doctor output', () => {
+    const report = createDoctorReport({ SUPABASE_URL: 'not-a-url' });
+    expect(report.ok).toBe(false);
+    expect(report.lines.join('\n')).toContain('SUPABASE_URL');
   });
 
   it('uses isolated auth storage for a named local profile', async () => {

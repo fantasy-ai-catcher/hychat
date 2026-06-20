@@ -87,5 +87,6 @@ docs/
 ├── CODE_MAP.md               this file
 ├── PRD.md                    product requirements
 ├── TECHNICAL_DESIGN.md       architecture & database schema
+├── DISTRIBUTION.md           Homebrew distribution + release steps (tap, baked-in config)
 └── plans/                    dated per-change plans (historical; not rewritten)
 ```
