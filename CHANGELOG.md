@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-21
+
 ### Added
 - The room members in the header now lay out in a 1/2/3-column grid sized to the
   terminal width, on their own lines below a `Members` label, instead of a single
