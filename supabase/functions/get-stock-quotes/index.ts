@@ -2,7 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 import { resolveStockQuotes } from '../_shared/stocks/cache.ts';
 import { createSupabaseQuoteCache, createYahooAuthStore } from '../_shared/stocks/store.ts';
-import { fetchChineseNames } from '../_shared/stocks/tencent.ts';
+import { createTencentProvider } from '../_shared/stocks/tencent-provider.ts';
+import { createRoutingProvider } from '../_shared/stocks/routing-provider.ts';
 import { createYahooProvider } from '../_shared/stocks/yahoo.ts';
 
 type RequestBody = {
@@ -68,8 +69,10 @@ Deno.serve(async (request) => {
       symbols: body.symbols,
       force: body.force ?? false,
       cache,
-      provider: createYahooProvider({ store: createYahooAuthStore(supabase) }),
-      nameResolver: fetchChineseNames,
+      provider: createRoutingProvider(
+        createTencentProvider(),
+        createYahooProvider({ store: createYahooAuthStore(supabase) })
+      ),
       now: new Date(),
       ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '60'),
       forceMinIntervalSeconds: Number(
