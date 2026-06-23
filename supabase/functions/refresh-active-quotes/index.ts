@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveStockQuotes, type ResolvedQuote } from '../_shared/stocks/cache.ts';
 import { createSupabaseQuoteCache, createYahooAuthStore } from '../_shared/stocks/store.ts';
 import { createTencentProvider } from '../_shared/stocks/tencent-provider.ts';
+import { createExtendedHoursProvider } from '../_shared/stocks/sina-extended.ts';
 import { createRoutingProvider } from '../_shared/stocks/routing-provider.ts';
 import { createYahooProvider } from '../_shared/stocks/yahoo.ts';
 
@@ -58,7 +59,7 @@ Deno.serve(async (request) => {
       force: false,
       cache: createSupabaseQuoteCache(supabase),
       provider: createRoutingProvider(
-        createTencentProvider(),
+        createExtendedHoursProvider(createTencentProvider()),
         createYahooProvider({ store: createYahooAuthStore(supabase) })
       ),
       now: new Date(),
