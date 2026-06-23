@@ -91,10 +91,14 @@ supabase/
     │   └── index.ts          cron-triggered Edge Function (x-cron-secret auth): batch-refreshes
     │                         present rooms' watchlists, broadcasts each room its quotes
     └── _shared/stocks/       shared logic for both functions
-                              (yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, US/HK/CN/JP;
-                              cache.ts: batched TTL/backoff resolveStockQuotes + fetch-once
-                              Chinese-name resolution (nameResolver) for HK/CN rows;
-                              tencent.ts: qt.gtimg.cn free Chinese names for HK/CN (display only);
+                              (tencent-provider.ts: qt.gtimg.cn provider for US/HK/CN —
+                              toTencentSymbol + parseTencentQuotes (price/change%/name per
+                              market; English US name from field 46) + GBK fetch shell;
+                              routing-provider.ts: splitByMarket + createRoutingProvider
+                              (US/HK/CN -> Tencent, JP -> Yahoo; throws only if every leg fails);
+                              yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, JP-only now;
+                              cache.ts: batched TTL/backoff resolveStockQuotes (display name
+                              comes straight from each provider quote);
                               store.ts: stock_quotes cache + yahoo_auth crumb store)
 
 scripts/

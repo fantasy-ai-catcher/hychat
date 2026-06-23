@@ -8,6 +8,11 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- Stock quotes for US, HK, and CN markets now come from Tencent (`qt.gtimg.cn`)
+  instead of Yahoo Finance — no auth, fewer outages. Yahoo is kept only for
+  Japan. US names stay in English.
+
 ## [0.4.0] - 2026-06-21
 
 ### Added
