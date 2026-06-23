@@ -82,7 +82,8 @@ supabase/
 │                             room_watchlist add/remove system-message trigger, …);
 │                             room enter/leave activity is client-side presence, not a DB trigger;
 │                             room_presence + heartbeat_presence / active_rooms_with_symbols RPCs,
-│                             yahoo_auth crumb cache, watchlist cap trigger, pg_cron 10s refresh job;
+│                             yahoo_auth crumb cache, watchlist cap trigger, pg_cron 10s refresh job
+│                             (cron skips invoking the edge function when no room is active);
 │                             newest migration is the source of truth
 └── functions/
     ├── get-stock-quotes/
