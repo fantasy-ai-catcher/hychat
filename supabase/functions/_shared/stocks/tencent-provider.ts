@@ -1,8 +1,12 @@
 import type {
   CachedStockQuote,
   EdgeMarket,
-  EdgeNormalizedSymbol
+  EdgeNormalizedSymbol,
+  EdgeStockProvider
 } from './provider.ts';
+
+const USER_AGENT = 'Mozilla/5.0';
+const QUOTE_BASE = 'https://qt.gtimg.cn/q=';
 
 // Map a normalized symbol to Tencent's market-prefixed ticker.
 // US -> usAAPL, HK -> hk00700 (5-digit), CN -> sh/sz<code>, JP -> null.
@@ -81,4 +85,36 @@ export function parseTencentQuotes(
     });
   }
   return quotes;
+}
+
+// qt.gtimg.cn prices US/HK/CN in one keyless GET and returns a GBK-encoded body.
+// JP is not covered here (the router sends JP to Yahoo).
+export function createTencentProvider(opts: { fetchImpl?: typeof fetch } = {}): EdgeStockProvider {
+  const fetchImpl = opts.fetchImpl ?? fetch;
+  return {
+    id: 'tencent',
+    async getQuotes(symbols: EdgeNormalizedSymbol[]): Promise<CachedStockQuote[]> {
+      const tickerToSymbol = new Map<string, EdgeNormalizedSymbol>();
+      const tickers: string[] = [];
+      for (const symbol of symbols) {
+        const ticker = toTencentSymbol(symbol);
+        if (ticker) {
+          tickerToSymbol.set(ticker.toLowerCase(), symbol);
+          tickers.push(ticker);
+        }
+      }
+      if (tickers.length === 0) {
+        return [];
+      }
+
+      const response = await fetchImpl(`${QUOTE_BASE}${tickers.join(',')}`, {
+        headers: { 'User-Agent': USER_AGENT }
+      });
+      if (!response.ok) {
+        throw new Error(`provider_http_${response.status}`);
+      }
+      const text = new TextDecoder('gbk').decode(await response.arrayBuffer());
+      return parseTencentQuotes(text, tickerToSymbol);
+    }
+  };
 }

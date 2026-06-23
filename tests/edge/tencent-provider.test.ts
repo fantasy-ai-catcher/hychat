@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createTencentProvider,
   parseTencentQuotes,
   toTencentSymbol
 } from '../../supabase/functions/_shared/stocks/tencent-provider.js';
@@ -75,5 +76,38 @@ describe('parseTencentQuotes', () => {
     const text = 'v_pv_none_match="1";\n' + hkLine;
     const quotes = parseTencentQuotes(text, mapping(['hk00700', '0700.HK']));
     expect(quotes.map((q) => q.canonicalSymbol)).toEqual(['0700.HK']);
+  });
+});
+
+describe('createTencentProvider', () => {
+  it('batches US/HK/CN into one GET and skips JP, returning parsed quotes', async () => {
+    const calls: string[] = [];
+    const body =
+      'v_usAAPL="200~Apple~AAPL.OQ~297.01~298.01~x~' +
+      Array(40).fill('0').join('~') + '~Apple Inc.~t";';
+    const fetchImpl = (async (url: unknown) => {
+      calls.push(String(url));
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const provider = createTencentProvider({ fetchImpl });
+    const quotes = await provider.getQuotes([
+      parseEdgeCanonicalSymbol('AAPL.US'),
+      parseEdgeCanonicalSymbol('7203.JP') // JP -> not sent to Tencent
+    ]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('qt.gtimg.cn/q=usAAPL');
+    expect(calls[0]).not.toContain('7203');
+    expect(quotes.map((q) => q.canonicalSymbol)).toEqual(['AAPL.US']);
+    expect(quotes[0].name).toBe('Apple Inc.');
+  });
+
+  it('returns [] without fetching when no symbol maps to Tencent', async () => {
+    const fetchImpl = (async () => {
+      throw new Error('should not fetch');
+    }) as unknown as typeof fetch;
+    const provider = createTencentProvider({ fetchImpl });
+    expect(await provider.getQuotes([parseEdgeCanonicalSymbol('7203.JP')])).toEqual([]);
   });
 });
