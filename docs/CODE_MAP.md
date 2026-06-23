@@ -96,6 +96,10 @@ supabase/
                               market; English US name from field 46) + GBK fetch shell;
                               routing-provider.ts: splitByMarket + createRoutingProvider
                               (US/HK/CN -> Tencent, JP -> Yahoo; throws only if every leg fails);
+                              sina-extended.ts: US pre/post overlay — usMarketSession +
+                              parseSinaExtended + createExtendedHoursProvider (wraps the Tencent
+                              leg, swaps US price/change to Sina hq.sinajs.cn extended values
+                              during pre/post, pass-through otherwise);
                               yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, JP-only now;
                               cache.ts: batched TTL/backoff resolveStockQuotes (display name
                               comes straight from each provider quote);
