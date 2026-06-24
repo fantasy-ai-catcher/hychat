@@ -17,6 +17,9 @@ All notable changes to HyChat are recorded here. The format loosely follows
   configured interval: the failure-retry backoff was wrongly applied to healthy
   rows that had simply aged past their TTL. They now refresh at the configured
   cadence.
+- Fixed a memory leak that could crash the app (JavaScript heap out of memory)
+  after a long session: each realtime reconnect stranded its old channel instead
+  of releasing it. Reconnects now remove the dead channel from the client.
 
 ### Changed
 - Stock quotes for US, HK, and CN markets now come from Tencent (`qt.gtimg.cn`)

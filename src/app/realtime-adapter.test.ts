@@ -12,7 +12,8 @@ describe('createRealtimeAdapter', () => {
       unsubscribe: vi.fn()
     };
     const client = {
-      channel: vi.fn(() => channel)
+      channel: vi.fn(() => channel),
+      removeChannel: vi.fn((ch: { unsubscribe: () => void }) => ch.unsubscribe())
     };
     const adapter = createRealtimeAdapter(client);
 
