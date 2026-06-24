@@ -124,6 +124,7 @@ export type ChatSessionSnapshot = {
   isBusy: boolean;
   helpLines: string[];
   shouldExit: boolean;
+  colorPickerOpen: boolean;
 };
 
 export type CreateChatSessionOptions = {
@@ -328,6 +329,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
   let statusText = signedOutStatus;
   let isBusy = false;
   let shouldExit = false;
+  let colorPickerOpen = false;
   let subscription: RoomSubscription | undefined;
   let pendingAuth: { email: string; inviteCode?: string } | null = null;
   let verifiedEmail: string | null = null;
@@ -372,7 +374,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
   }
 
   function snapshot(): ChatSessionSnapshot {
-    return { state, user, statusText, isBusy, helpLines, shouldExit };
+    return { state, user, statusText, isBusy, helpLines, shouldExit, colorPickerOpen };
   }
 
   function emitSnapshotChange(): void {
@@ -627,6 +629,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
     }
 
     return user;
+  }
+
+  // Persist a profile color, reflect it in the member panel immediately, and
+  // report the result. Shared by `/color set` and the picker's pickColor.
+  async function applyColor(name: string): Promise<{ ok: boolean }> {
+    if (!isProfileColorName(name)) {
+      return { ok: false };
+    }
+    user = await options.service.updateProfileColor(name);
+    apply({ type: 'member-color-changed', userId: user.id, color: user.displayColor });
+    return { ok: true };
   }
 
   function requireActiveRoom(): string {
@@ -892,21 +905,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
       case 'color-list':
         requireUser();
-        statusText = formatProfileColorList();
+        colorPickerOpen = true;
         return;
 
       case 'color-set': {
         requireUser();
-        if (!isProfileColorName(command.color)) {
+        const result = await applyColor(command.color);
+        if (!result.ok) {
           statusText = `Unknown color: ${command.color}\n${formatProfileColorList()}`;
           return;
         }
-
-        user = await options.service.updateProfileColor(command.color);
-        // Reflect the new color in the member panel right away, without waiting
-        // for our next message to carry the snapshot.
-        apply({ type: 'member-color-changed', userId: user.id, color: user.displayColor });
-        statusText = `Color set to ${user.displayColor}.`;
+        statusText = `Color set to ${user?.displayColor}.`;
         return;
       }
 
@@ -953,6 +962,19 @@ export function createChatSession(options: CreateChatSessionOptions) {
     notifyFocus(focused: boolean): void {
       currentFocus = focused ? 'active' : 'online';
       subscription?.sendFocus?.(focused);
+    },
+
+    // Apply a color chosen in the interactive picker, then close it.
+    async pickColor(name: string): Promise<void> {
+      await applyColor(name);
+      colorPickerOpen = false;
+      emitSnapshotChange();
+    },
+
+    // Dismiss the interactive picker without changing the color.
+    closeColorPicker(): void {
+      colorPickerOpen = false;
+      emitSnapshotChange();
     },
 
     async handleLine(line: string): Promise<ChatSessionSnapshot> {

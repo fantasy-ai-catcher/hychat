@@ -1177,6 +1177,44 @@ describe('createChatSession', () => {
 
     expect(onSnapshotChange).not.toHaveBeenCalled();
   });
+
+  it('opens the color picker on /color list instead of printing the palette', async () => {
+    const { service } = createService();
+    const session = createChatSession({ service });
+    await signIn(session);
+
+    const snapshot = await session.handleLine('/color list');
+    expect(snapshot.colorPickerOpen).toBe(true);
+  });
+
+  it('pickColor sets the color, updates the panel, and closes the picker', async () => {
+    const { service, calls } = createService();
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({ service, onSnapshotChange: (s) => { latest = s; } });
+    await signIn(session);
+    await session.handleLine('/color list');
+
+    await session.pickColor('sage');
+
+    expect(calls).toEqual(
+      expect.arrayContaining([{ method: 'updateProfileColor', args: ['sage'] }])
+    );
+    expect(latest?.colorPickerOpen).toBe(false);
+    expect(latest?.user?.displayColor).toBe('sage');
+  });
+
+  it('closeColorPicker closes without changing the color', async () => {
+    const { service, calls } = createService();
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({ service, onSnapshotChange: (s) => { latest = s; } });
+    await signIn(session);
+    await session.handleLine('/color list');
+
+    session.closeColorPicker();
+
+    expect(calls.some((c) => c.method === 'updateProfileColor')).toBe(false);
+    expect(latest?.colorPickerOpen).toBe(false);
+  });
 });
 
 describe('buildPendingStatusText', () => {

@@ -57,7 +57,8 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
       'Use /start <email> to log in, or /start <email> <invite-code> to register.',
     isBusy: false,
     helpLines: [],
-    shouldExit: false
+    shouldExit: false,
+    colorPickerOpen: false
   };
 }
 
