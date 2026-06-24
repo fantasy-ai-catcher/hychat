@@ -101,6 +101,10 @@ supabase/
                               parseSinaExtended + createExtendedHoursProvider (wraps the Tencent
                               leg, swaps US price/change to Sina hq.sinajs.cn extended values
                               during pre/post, pass-through otherwise);
+                              sina-hk.ts: HK real-time overlay — toSinaHkSymbol +
+                              parseSinaHkRealtime + createSinaHkProvider (swaps HK price/change to
+                              Sina rt_hk real-time values, keeps Tencent's name; Tencent HK is
+                              ~15min delayed);
                               yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, JP-only now;
                               cache.ts: batched TTL/backoff resolveStockQuotes (display name
                               comes straight from each provider quote);
