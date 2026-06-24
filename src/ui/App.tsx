@@ -7,7 +7,7 @@ import {
   type ChatSessionSnapshot,
   type CreateChatSessionOptions
 } from '../app/chat-session.js';
-import { resolveProfileColor } from '../app/profile-colors.js';
+import { DEFAULT_PROFILE_COLOR, resolveProfileColor } from '../app/profile-colors.js';
 import {
   buildWatchlistTable,
   type WatchlistDirection,
@@ -35,6 +35,13 @@ import {
   mergeChatTimeline,
   resolveShellView
 } from './state.js';
+import {
+  colorPickerColumns,
+  movePickerSelection,
+  pickerColorNames,
+  pickerGridRows,
+  type PickerDirection
+} from './color-picker.js';
 import { buildRenderLines, sliceWindow } from './scroll.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
 import { isMouseSequence, watchTerminalMouse } from './terminal-mouse.js';
@@ -130,6 +137,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const [showPanel, setShowPanel] = useState(true);
   // Rows scrolled up from the latest message (0 == pinned to the bottom).
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [pickerIndex, setPickerIndex] = useState(0);
 
   // AppShell knows the real wrapped-line count, so it writes the scroll ceiling
   // here during render; the handlers clamp against it so we never scroll past
@@ -175,6 +183,16 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
     };
   }, [snapshot.isBusy]);
 
+  const colorPickerOpen = snapshot.colorPickerOpen;
+  useEffect(() => {
+    if (colorPickerOpen) {
+      const names = pickerColorNames();
+      const currentName = snapshot.user?.displayColor ?? DEFAULT_PROFILE_COLOR;
+      const found = names.indexOf(currentName);
+      setPickerIndex(found >= 0 ? found : 0);
+    }
+  }, [colorPickerOpen, snapshot.user?.displayColor]);
+
   async function submitLine(line: string): Promise<void> {
     if (!session) {
       return;
@@ -191,6 +209,37 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   }
 
   useInput((value, key) => {
+    if (snapshot.colorPickerOpen) {
+      if (key.ctrl && value === 'c') {
+        exit();
+        return;
+      }
+      if (key.escape) {
+        session?.closeColorPicker();
+        return;
+      }
+      if (key.return) {
+        const names = pickerColorNames();
+        void session?.pickColor(names[pickerIndex] ?? DEFAULT_PROFILE_COLOR);
+        return;
+      }
+      const direction: PickerDirection | undefined = key.upArrow
+        ? 'up'
+        : key.downArrow
+          ? 'down'
+          : key.leftArrow
+            ? 'left'
+            : key.rightArrow
+              ? 'right'
+              : undefined;
+      if (direction) {
+        const count = pickerColorNames().length;
+        const columns = colorPickerColumns(process.stdout.columns ?? 80);
+        setPickerIndex((current) => movePickerSelection(current, direction, count, columns));
+      }
+      return; // picker swallows all other keys
+    }
+
     if (key.ctrl && value === 'c') {
       exit();
       return;
@@ -267,6 +316,16 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   // last frame, freezing a stale "connecting…" status bar in the scrollback.
   if (snapshot.shouldExit) {
     return null;
+  }
+
+  if (snapshot.colorPickerOpen) {
+    return (
+      <ColorPicker
+        index={pickerIndex}
+        terminalWidth={terminalColumns}
+        currentColor={snapshot.user?.displayColor}
+      />
+    );
   }
 
   return (
@@ -556,6 +615,55 @@ function memberDot(status: MemberView['status']): string {
 
 // Cap a single member cell so one long name can't stretch the whole grid.
 const maxMemberCellWidth = 24;
+
+export type ColorPickerProps = {
+  index: number;
+  terminalWidth?: number;
+  currentColor?: string;
+};
+
+export function ColorPicker({
+  index,
+  terminalWidth = process.stdout.columns ?? 80,
+  currentColor
+}: ColorPickerProps) {
+  const names = pickerColorNames();
+  const columns = colorPickerColumns(terminalWidth);
+  const rows = pickerGridRows(
+    names.map((name, cellIndex) => ({ name, cellIndex })),
+    columns
+  );
+
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+      <Text bold>Pick a color</Text>
+      <Text dimColor>↑↓←→ to move · Enter to select · Esc to cancel</Text>
+      {rows.map((row, rowIndex) => (
+        <Box key={rowIndex}>
+          {row.map((cell) => {
+            const selected = cell.cellIndex === index;
+            const isDefault = cell.name === DEFAULT_PROFILE_COLOR;
+            const label = isDefault ? 'default' : cell.name;
+            const current = cell.name === currentColor ? '*' : ' ';
+            return (
+              <Box key={cell.name} width={12} flexShrink={0}>
+                <Text
+                  color={isDefault ? undefined : resolveProfileColor(cell.name)}
+                  inverse={selected}
+                  bold={selected}
+                >
+                  {selected ? '▸' : ' '}
+                  {current}
+                  {label}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 export function TopInfoPanel({
   state,

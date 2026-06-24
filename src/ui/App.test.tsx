@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   App,
   AppShell,
+  ColorPicker,
   InputComposer,
   isPanelToggle,
   MessageViewport,
@@ -528,6 +529,15 @@ describe('App', () => {
     expect(text).toContain('腾讯控股');
     // The code now shows as its own dim column alongside the shortname.
     expect(text).toContain('0700.HK');
+  });
+
+  it('renders every pickable color name in the picker', () => {
+    const text = collectText(
+      ColorPicker({ index: 0, terminalWidth: 100, currentColor: 'white' })
+    );
+    expect(text).toContain('default'); // the leading default cell
+    expect(text).toContain('sage');
+    expect(text).toContain('gray');
   });
 
   it('renders message sender names with their profile color', () => {
