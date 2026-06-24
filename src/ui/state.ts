@@ -148,7 +148,7 @@ export function computeMemberStatuses(
 // more columns; the count is clamped to [1, memberCount] so we never render an
 // empty column or a grid wider than there are members.
 export function memberGridColumns(terminalWidth: number, memberCount: number): number {
-  const byWidth = terminalWidth >= 120 ? 3 : terminalWidth >= 80 ? 2 : 1;
+  const byWidth = terminalWidth >= 100 ? 3 : terminalWidth >= 80 ? 2 : 1;
   return Math.max(1, Math.min(byWidth, memberCount));
 }
 
