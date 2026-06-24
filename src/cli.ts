@@ -171,6 +171,10 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     // alive, so /quit hangs on "connecting…" instead of returning to the shell.
     await app.waitUntilExit();
     supabase.realtime.disconnect();
+    // The UI renders an empty frame on exit (see App: shouldExit -> null), so Ink
+    // has already erased its output by now. Print a clean goodbye on its own line
+    // and exit (the open websocket would otherwise keep the event loop alive).
+    process.stdout.write('Bye.\n');
     process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start HyChat.';

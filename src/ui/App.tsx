@@ -261,6 +261,13 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const terminalRows = process.stdout.rows;
   const terminalColumns = process.stdout.columns;
 
+  // On /quit (or Ctrl+C) render an empty frame so Ink erases the whole UI on
+  // this render, before the exit effect unmounts. Otherwise Ink persists its
+  // last frame, freezing a stale "connecting…" status bar in the scrollback.
+  if (snapshot.shouldExit) {
+    return null;
+  }
+
   return (
     <AppShell
       state={activeState}
