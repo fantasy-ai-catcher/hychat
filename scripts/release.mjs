@@ -79,7 +79,9 @@ function updateTap(formulaPath, version) {
   const workDir = mkdtempSync(join(tmpdir(), 'hychat-tap-'));
   const tapDir = join(workDir, 'homebrew-tap');
   try {
-    run('git', ['clone', `git@github.com:${TAP_REPO}.git`, tapDir], { cwd: workDir });
+    // HTTPS (not SSH) so the tap push reuses the same gh/HTTPS credentials the
+    // main repo uses — this machine has no SSH key registered with GitHub.
+    run('git', ['clone', `https://github.com/${TAP_REPO}.git`, tapDir], { cwd: workDir });
     cpSync(formulaPath, join(tapDir, 'Formula', 'hychat.rb'));
     run('git', ['add', 'Formula/hychat.rb'], { cwd: tapDir });
     run('git', ['commit', '-m', `hychat ${version}`], { cwd: tapDir });
