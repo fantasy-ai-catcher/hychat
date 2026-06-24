@@ -8,6 +8,16 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Changed
+- Profile colors are now a muted palette instead of the old vivid one. `/color
+  list` is an interactive picker — move with the arrow keys, Enter to select,
+  Esc to cancel — and `/color set <name>` still works. Previously saved colors
+  reset to the default; re-pick from the new palette.
+
+### Fixed
+- `/quit` no longer leaves a stale "connecting…" panel in the terminal on exit;
+  the UI is cleared before the process exits.
+
 ## [0.5.0] - 2026-06-24
 
 ### Added
