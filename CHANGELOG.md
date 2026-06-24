@@ -24,6 +24,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
   Japan. US names stay in English.
 - HK prices are now real-time (sourced from Sina's `rt_hk` feed); Tencent's free
   HK feed was ~15 minutes delayed. HK names still come from Tencent.
+- The "joined/left the room" lines are now hidden by default. Set
+  `HYCHAT_SHOW_PRESENCE_ACTIVITY=1` to bring them back.
 
 ## [0.4.0] - 2026-06-21
 

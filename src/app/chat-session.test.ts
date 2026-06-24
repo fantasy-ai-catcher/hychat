@@ -912,6 +912,35 @@ describe('createChatSession', () => {
     ]);
   });
 
+  it('suppresses presence join/left lines when showPresenceActivity is false', async () => {
+    const { service } = createService();
+    let presenceHandler: ((onlineUserIds: string[]) => void) | undefined;
+    const realtime = {
+      subscribeToRoom: vi.fn((_roomId, handlers) => {
+        presenceHandler = handlers.onPresenceChange;
+        return { unsubscribe: vi.fn(), sendFocus: vi.fn() };
+      })
+    };
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({
+      service,
+      realtime,
+      showPresenceActivity: false,
+      onSnapshotChange: (snapshot) => {
+        latest = snapshot;
+      }
+    });
+
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    presenceHandler?.(['user-1']); // baseline
+    presenceHandler?.(['user-1', 'user-2']); // would-be join
+    presenceHandler?.(['user-1']); // would-be leave
+
+    expect(latest?.state.activityByRoom['room-1'] ?? []).toEqual([]);
+  });
+
   it('throttles outgoing typing broadcasts', async () => {
     const { service } = createService();
     const sendTyping = vi.fn();
