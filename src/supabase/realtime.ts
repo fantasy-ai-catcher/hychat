@@ -57,6 +57,11 @@ type ChannelOptions = { config: { presence: { key: string } } };
 
 type SupabaseRealtimeClient = {
   channel: (topic: string, opts?: ChannelOptions) => any;
+  // removeChannel unsubscribes AND drops the channel from the client's internal
+  // list. A bare channel.unsubscribe() leaks the channel object in supabase-js.
+  // Optional only so trivial test doubles can omit it; the real client always
+  // provides it, so production always frees channels.
+  removeChannel?: (channel: any) => void;
 };
 
 export type RoomRealtimeOptions = {
@@ -127,10 +132,13 @@ export function subscribeToRoomRealtime(
       if (disposed) {
         return;
       }
-      // Drop the dead channel before rebuilding so duplicates don't stack on the
-      // socket; teardown is best-effort.
+      // Remove the dead channel before rebuilding. removeChannel unsubscribes AND
+      // drops it from the client's channel list; a bare unsubscribe() would strand
+      // the channel in supabase-js, leaking one per reconnect (heap OOM over hours).
       try {
-        channel?.unsubscribe();
+        if (channel) {
+          client.removeChannel?.(channel);
+        }
       } catch {
         // ignore — we are replacing it anyway
       }
@@ -235,7 +243,7 @@ export function subscribeToRoomRealtime(
         clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
       }
-      return channel.unsubscribe();
+      client.removeChannel?.(channel);
     },
     sendTyping() {
       if (!options.userId) {

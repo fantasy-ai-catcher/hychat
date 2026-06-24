@@ -45,7 +45,8 @@ describe('room realtime subscriptions', () => {
       unsubscribe
     };
     const client = {
-      channel: vi.fn(() => channel)
+      channel: vi.fn(() => channel),
+      removeChannel: vi.fn((ch: { unsubscribe: () => void }) => ch.unsubscribe())
     };
 
     const subscription = subscribeToRoomRealtime(client, {
@@ -245,7 +246,10 @@ describe('room realtime subscriptions', () => {
     vi.useFakeTimers();
     const channels = [makeFakeChannel(), makeFakeChannel()];
     let built = 0;
-    const client = { channel: vi.fn(() => channels[built++]) };
+    const client = {
+      channel: vi.fn(() => channels[built++]),
+      removeChannel: vi.fn((ch: { unsubscribe: () => void }) => ch.unsubscribe())
+    };
 
     subscribeToRoomRealtime(client, {
       roomId: 'room-1',
@@ -271,11 +275,50 @@ describe('room realtime subscriptions', () => {
     vi.useRealTimers();
   });
 
+  it('releases the dead channel from the client on reconnect (no channel leak)', () => {
+    vi.useFakeTimers();
+    const tracked: ReturnType<typeof makeFakeChannel>[] = [];
+    const client = {
+      channel: vi.fn(() => {
+        const ch = makeFakeChannel();
+        tracked.push(ch);
+        return ch;
+      }),
+      // Model supabase-js: removeChannel unsubscribes AND drops it from the client.
+      removeChannel: vi.fn((ch: ReturnType<typeof makeFakeChannel>) => {
+        ch.unsubscribe();
+        const index = tracked.indexOf(ch);
+        if (index >= 0) tracked.splice(index, 1);
+      })
+    };
+
+    subscribeToRoomRealtime(client, {
+      roomId: 'room-1',
+      userId: 'user-1',
+      onMessage: vi.fn(),
+      onWatchlistChange: vi.fn()
+    });
+
+    // Three error -> reconnect cycles. Each must release the dead channel so the
+    // client never accumulates them (the OOM leak).
+    for (let i = 0; i < 3; i += 1) {
+      tracked[tracked.length - 1].emitStatus('CHANNEL_ERROR');
+      vi.advanceTimersByTime(30000);
+    }
+
+    expect(client.removeChannel).toHaveBeenCalledTimes(3);
+    expect(tracked).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
   it('does not reconnect a channel that was intentionally unsubscribed', () => {
     vi.useFakeTimers();
     const channels = [makeFakeChannel(), makeFakeChannel()];
     let built = 0;
-    const client = { channel: vi.fn(() => channels[built++]) };
+    const client = {
+      channel: vi.fn(() => channels[built++]),
+      removeChannel: vi.fn((ch: { unsubscribe: () => void }) => ch.unsubscribe())
+    };
 
     const subscription = subscribeToRoomRealtime(client, {
       roomId: 'room-1',
