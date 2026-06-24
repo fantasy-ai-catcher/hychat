@@ -38,9 +38,29 @@ describe('parseEnv', () => {
         supabaseUrl: 'https://example.supabase.co',
         supabasePublishableKey: 'publishable-key',
         stockProvider: 'yahoo_finance',
-        stockQuoteCacheTtlSeconds: 60
+        stockQuoteCacheTtlSeconds: 60,
+        showPresenceActivity: false
       }
     });
+  });
+
+  it('defaults presence join/left activity lines to off', () => {
+    const result = parseEnv({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.value.showPresenceActivity).toBe(false);
+    }
+  });
+
+  it('enables presence activity when HYCHAT_SHOW_PRESENCE_ACTIVITY is truthy', () => {
+    for (const value of ['1', 'true', 'yes', 'on', 'TRUE']) {
+      const result = parseEnv({ HYCHAT_SHOW_PRESENCE_ACTIVITY: value });
+      expect(result.success && result.value.showPresenceActivity).toBe(true);
+    }
+    for (const value of ['0', 'false', '', 'no']) {
+      const result = parseEnv({ HYCHAT_SHOW_PRESENCE_ACTIVITY: value });
+      expect(result.success && result.value.showPresenceActivity).toBe(false);
+    }
   });
 
   it('accepts an explicit stock quote cache TTL', () => {

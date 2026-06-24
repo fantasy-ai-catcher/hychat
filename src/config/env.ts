@@ -5,6 +5,9 @@ export type AppConfig = {
   supabasePublishableKey: string;
   stockProvider: 'yahoo_finance';
   stockQuoteCacheTtlSeconds: number;
+  // Whether to show ephemeral "joined/left the room" lines. Off by default;
+  // set HYCHAT_SHOW_PRESENCE_ACTIVITY=1 to bring them back.
+  showPresenceActivity: boolean;
 };
 
 export type ParseEnvResult =
@@ -24,8 +27,11 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().url().default(DEFAULT_SUPABASE_URL),
   SUPABASE_PUBLISHABLE_KEY: z.string().min(1).default(DEFAULT_SUPABASE_PUBLISHABLE_KEY),
   STOCK_PROVIDER: z.literal('yahoo_finance').default('yahoo_finance'),
-  STOCK_QUOTE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60)
+  STOCK_QUOTE_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+  HYCHAT_SHOW_PRESENCE_ACTIVITY: z.string().optional()
 });
+
+const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 
 export function parseEnv(env: Record<string, string | undefined>): ParseEnvResult {
   const parsed = envSchema.safeParse(env);
@@ -46,7 +52,10 @@ export function parseEnv(env: Record<string, string | undefined>): ParseEnvResul
       supabaseUrl: parsed.data.SUPABASE_URL,
       supabasePublishableKey: parsed.data.SUPABASE_PUBLISHABLE_KEY,
       stockProvider: parsed.data.STOCK_PROVIDER,
-      stockQuoteCacheTtlSeconds: parsed.data.STOCK_QUOTE_CACHE_TTL_SECONDS
+      stockQuoteCacheTtlSeconds: parsed.data.STOCK_QUOTE_CACHE_TTL_SECONDS,
+      showPresenceActivity: TRUTHY.has(
+        (parsed.data.HYCHAT_SHOW_PRESENCE_ACTIVITY ?? '').toLowerCase()
+      )
     }
   };
 }

@@ -130,6 +130,9 @@ export type CreateChatSessionOptions = {
   service: ChatServiceLike;
   realtime?: RealtimeLike;
   onSnapshotChange?: (snapshot: ChatSessionSnapshot) => void;
+  // Whether to emit ephemeral "joined/left the room" activity lines on presence
+  // changes. Defaults to true; the CLI wires this from HYCHAT_SHOW_PRESENCE_ACTIVITY.
+  showPresenceActivity?: boolean;
 };
 
 const helpSections = [
@@ -561,7 +564,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
         // First sync is the baseline; afterwards, arrivals/departures become
         // ephemeral "joined/left the room" activity lines.
         if (presenceBaselineEstablished) {
-          announcePresenceTransitions(roomId, previous, onlineUserIds);
+          if (options.showPresenceActivity ?? true) {
+            announcePresenceTransitions(roomId, previous, onlineUserIds);
+          }
         } else {
           presenceBaselineEstablished = true;
         }

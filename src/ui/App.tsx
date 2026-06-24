@@ -46,6 +46,7 @@ export type AppProps = {
   state?: AppState;
   service?: CreateChatSessionOptions['service'];
   realtime?: CreateChatSessionOptions['realtime'];
+  showPresenceActivity?: boolean;
 };
 
 function createSnapshot(state: AppState): ChatSessionSnapshot {
@@ -60,7 +61,7 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
   };
 }
 
-export function App({ state: fixedState, service, realtime }: AppProps) {
+export function App({ state: fixedState, service, realtime, showPresenceActivity }: AppProps) {
   const { exit } = useApp();
   const [buffer, setBuffer] = useState(emptyBuffer);
   const input = buffer.value;
@@ -75,10 +76,11 @@ export function App({ state: fixedState, service, realtime }: AppProps) {
         ? createChatSession({
             service,
             realtime,
+            showPresenceActivity,
             onSnapshotChange: setSnapshot
           })
         : undefined,
-    [service, realtime]
+    [service, realtime, showPresenceActivity]
   );
 
   useEffect(() => {

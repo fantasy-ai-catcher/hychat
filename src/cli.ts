@@ -157,7 +157,13 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     // token is applied to the live socket as soon as the session resolves.
     supabase.realtime.connect();
 
-    render(React.createElement(App, { service, realtime }));
+    render(
+      React.createElement(App, {
+        service,
+        realtime,
+        showPresenceActivity: config.showPresenceActivity
+      })
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start HyChat.';
     console.error(message);
