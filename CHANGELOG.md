@@ -23,6 +23,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 - Fixed the header members panel wrapping/misaligning when a member with a
   longer name was typing: the "is typing" mark overflowed its cell. The name now
   shrinks to keep the mark inside the cell.
+- Fixed `/quit` hanging on "connecting…" instead of exiting: the realtime
+  websocket is now closed on exit so the process can terminate.
 
 ### Changed
 - Stock quotes for US, HK, and CN markets now come from Tencent (`qt.gtimg.cn`)

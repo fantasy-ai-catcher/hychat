@@ -157,13 +157,21 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     // token is applied to the live socket as soon as the session resolves.
     supabase.realtime.connect();
 
-    render(
+    const app = render(
       React.createElement(App, {
         service,
         realtime,
         showPresenceActivity: config.showPresenceActivity
       })
     );
+
+    // Wait for the UI to exit (/quit or Ctrl+C), then tear down realtime and
+    // force-exit. Otherwise the open websocket — which supabase-js keeps
+    // auto-reconnecting — and its auth refresh timer keep Node's event loop
+    // alive, so /quit hangs on "connecting…" instead of returning to the shell.
+    await app.waitUntilExit();
+    supabase.realtime.disconnect();
+    process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to start HyChat.';
     console.error(message);
