@@ -32,6 +32,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
   HK feed was ~15 minutes delayed. HK names still come from Tencent.
 - The "joined/left the room" lines are now hidden by default. Set
   `HYCHAT_SHOW_PRESENCE_ACTIVITY=1` to bring them back.
+- The header members grid now uses 3 columns from a slightly narrower terminal
+  (≥100 columns, was ≥120), so members stack less tall.
 
 ## [0.4.0] - 2026-06-21
 

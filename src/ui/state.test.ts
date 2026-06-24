@@ -577,8 +577,8 @@ describe('member grid layout', () => {
   it('chooses 1/2/3 columns by terminal width', () => {
     expect(memberGridColumns(70, 9)).toBe(1);
     expect(memberGridColumns(80, 9)).toBe(2);
-    expect(memberGridColumns(119, 9)).toBe(2);
-    expect(memberGridColumns(120, 9)).toBe(3);
+    expect(memberGridColumns(99, 9)).toBe(2);
+    expect(memberGridColumns(100, 9)).toBe(3);
   });
 
   it('never uses more columns than there are members, and at least one', () => {
