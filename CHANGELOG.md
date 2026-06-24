@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-24
+
 ### Added
 - US stocks now show pre-market and after-hours prices during those sessions
   (sourced from Sina). Outside extended hours nothing changes.
