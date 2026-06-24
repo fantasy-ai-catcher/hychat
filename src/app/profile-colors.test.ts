@@ -9,23 +9,25 @@ import {
 } from './profile-colors.js';
 
 describe('profile colors', () => {
-  it('offers exactly 20 selectable colors plus the white default', () => {
+  it('offers exactly 13 muted selectable colors plus the white default', () => {
     expect(DEFAULT_PROFILE_COLOR).toBe('white');
-    expect(PROFILE_COLORS).toHaveLength(20);
-    expect(PROFILE_COLORS.map((color) => color.name)).toContain('rose');
+    expect(PROFILE_COLORS).toHaveLength(13);
+    expect(PROFILE_COLORS.map((color) => color.name)).toContain('sage');
     expect(PROFILE_COLORS.map((color) => color.name)).not.toContain('white');
+    expect(PROFILE_COLORS.map((color) => color.name)).not.toContain('red');
   });
 
   it('validates color names and resolves terminal color values', () => {
-    expect(isProfileColorName('rose')).toBe(true);
+    expect(isProfileColorName('sage')).toBe(true);
     expect(isProfileColorName('white')).toBe(true);
-    expect(isProfileColorName('not-a-color')).toBe(false);
-    expect(resolveProfileColor('rose')).toMatch(/^#/);
+    expect(isProfileColorName('red')).toBe(false);
+    expect(resolveProfileColor('sage')).toMatch(/^#/);
+    expect(resolveProfileColor('red')).toBe('white');
     expect(resolveProfileColor(undefined)).toBe('white');
   });
 
   it('formats the selectable colors for the color command', () => {
-    expect(formatProfileColorList()).toContain('1:red');
-    expect(formatProfileColorList()).toContain('20:gray');
+    expect(formatProfileColorList()).toContain('1:slate');
+    expect(formatProfileColorList()).toContain('13:gray');
   });
 });

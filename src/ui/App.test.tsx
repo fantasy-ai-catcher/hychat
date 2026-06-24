@@ -262,8 +262,8 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
-          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'moss', role: 'member' }
         ]
       },
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
@@ -309,8 +309,8 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
-          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'moss', role: 'member' }
         ]
       },
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
@@ -351,7 +351,7 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' }
         ]
       },
       onlineByRoom: { 'room-1': ['user-1'] },
@@ -388,10 +388,10 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
-          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' },
-          { roomId: 'room-1', userId: 'user-4', displayName: 'carol', displayColor: 'amber', role: 'member' },
-          { roomId: 'room-1', userId: 'user-5', displayName: 'dave', displayColor: 'blue', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'moss', role: 'member' },
+          { roomId: 'room-1', userId: 'user-4', displayName: 'carol', displayColor: 'sand', role: 'member' },
+          { roomId: 'room-1', userId: 'user-5', displayName: 'dave', displayColor: 'steel', role: 'member' }
         ]
       },
       onlineByRoom: {
@@ -705,7 +705,7 @@ describe('MessageViewport system messages', () => {
     roomId: 'room-1',
     senderId: 'user-2',
     senderName: 'alice',
-    senderColor: 'cyan',
+    senderColor: 'teal',
     kind: 'system' as const,
     body: 'added AAPL.US',
     metadata: { event: 'watch_add', symbol: 'AAPL.US' },

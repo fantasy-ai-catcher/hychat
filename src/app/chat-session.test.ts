@@ -567,7 +567,7 @@ describe('createChatSession', () => {
     await signIn(session);
     let snapshot = await session.handleLine('/color');
     expect(snapshot.statusText).toContain('Current color: white');
-    expect(snapshot.statusText).toContain('1:red');
+    expect(snapshot.statusText).toContain('1:slate');
 
     snapshot = await session.handleLine('/color set rose');
 
