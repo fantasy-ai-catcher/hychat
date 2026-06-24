@@ -606,10 +606,20 @@ export function TopInfoPanel({
                 const accent = offline ? undefined : resolveProfileColor(member.displayColor);
                 return (
                   <Box key={member.userId} width={memberCellWidth} flexShrink={0} marginRight={2}>
-                    <Text color={accent} dimColor={offline} wrap="truncate">
-                      {memberDot(member.status)} {member.displayName ?? member.userId}
-                    </Text>
-                    {member.typing ? <Text color="cyanBright"> ✎</Text> : null}
+                    {/* Name shrinks to make room for the typing mark INSIDE the
+                        fixed cell width, so a typing member can't overflow the
+                        cell and wrap the whole grid (the mark's emoji width is
+                        absorbed automatically rather than guessed). */}
+                    <Box flexShrink={1} minWidth={0}>
+                      <Text color={accent} dimColor={offline} wrap="truncate">
+                        {memberDot(member.status)} {member.displayName ?? member.userId}
+                      </Text>
+                    </Box>
+                    {member.typing ? (
+                      <Box flexShrink={0}>
+                        <Text color="cyanBright"> ✎</Text>
+                      </Box>
+                    ) : null}
                   </Box>
                 );
               })}
