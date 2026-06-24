@@ -12,6 +12,12 @@ All notable changes to HyChat are recorded here. The format loosely follows
 - US stocks now show pre-market and after-hours prices during those sessions
   (sourced from Sina). Outside extended hours nothing changes.
 
+### Fixed
+- Watched quotes were refreshing only about every 15s regardless of the
+  configured interval: the failure-retry backoff was wrongly applied to healthy
+  rows that had simply aged past their TTL. They now refresh at the configured
+  cadence.
+
 ### Changed
 - Stock quotes for US, HK, and CN markets now come from Tencent (`qt.gtimg.cn`)
   instead of Yahoo Finance — no auth, fewer outages. Yahoo is kept only for

@@ -90,9 +90,12 @@ export async function resolveStockQuotes(
       continue;
     }
 
+    // Back off only for genuinely failed rows (status not ok). A healthy ok row
+    // that merely aged past its TTL must refresh right away — otherwise the
+    // failure-retry window would cap the refresh cadence instead of the TTL.
     if (
       cached &&
-      !cacheIsFresh &&
+      cached.status !== 'ok' &&
       msSinceAttempt !== null &&
       msSinceAttempt < failureRetryMs
     ) {
