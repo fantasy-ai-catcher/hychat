@@ -279,6 +279,60 @@ describe('resolveStockQuotes', () => {
     expect(result.failed).toEqual([]);
   });
 
+  it('refetches a healthy expired ok row even within the failure-retry window', async () => {
+    // The failure-retry backoff must only hold back genuinely failed rows. A
+    // status:'ok' row that simply aged past its TTL should refresh immediately,
+    // even if the last attempt was seconds ago — otherwise the refresh cadence
+    // is capped at failureRetrySeconds instead of the (much shorter) TTL.
+    const cache = createCache([
+      {
+        canonicalSymbol: '600519.CN',
+        market: 'CN',
+        providerSymbol: '600519',
+        provider: 'tencent',
+        status: 'ok',
+        price: 1500,
+        changePercent: 0.2,
+        cacheExpiresAt: '2026-06-06T07:59:58.000Z', // expired 2s ago
+        lastRefreshAttemptAt: '2026-06-06T07:59:55.000Z', // attempted 5s ago (< 15s)
+        updatedAt: '2026-06-06T07:59:55.000Z'
+      }
+    ]);
+    let providerCalls = 0;
+    const provider: EdgeStockProvider = {
+      id: 'test',
+      async getQuotes(symbols) {
+        providerCalls += 1;
+        return symbols.map((symbol) => ({
+          canonicalSymbol: symbol.canonicalSymbol,
+          market: symbol.market,
+          providerSymbol: symbol.providerSymbol,
+          provider: 'tencent',
+          status: 'ok' as const,
+          price: 1555,
+          changePercent: 0.9,
+          cacheExpiresAt: 'ignored',
+          updatedAt: 'ignored'
+        }));
+      }
+    };
+
+    const result = await resolveStockQuotes({
+      symbols: ['600519.CN'],
+      force: false,
+      cache: cache.store,
+      provider,
+      now,
+      ttlSeconds: 5,
+      failureRetrySeconds: 15
+    });
+
+    expect(providerCalls).toBe(1);
+    expect(result.quotes[0]).toEqual(
+      expect.objectContaining({ symbol: '600519.CN', price: 1555, cacheStatus: 'refreshed' })
+    );
+  });
+
   it('throttles force refreshes against a fresh ok cache row', async () => {
     const cache = createCache([
       {
