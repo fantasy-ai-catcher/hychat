@@ -63,7 +63,7 @@ Deno.serve(async (request) => {
         createYahooProvider({ store: createYahooAuthStore(supabase) })
       ),
       now: new Date(),
-      ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '10'),
+      ttlSeconds: Number(Deno.env.get('STOCK_QUOTE_CACHE_TTL_SECONDS') ?? '5'),
       forceMinIntervalSeconds: Number(
         Deno.env.get('STOCK_QUOTE_FORCE_MIN_INTERVAL_SECONDS') ?? '30'
       ),
