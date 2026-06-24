@@ -20,6 +20,9 @@ All notable changes to HyChat are recorded here. The format loosely follows
 - Fixed a memory leak that could crash the app (JavaScript heap out of memory)
   after a long session: each realtime reconnect stranded its old channel instead
   of releasing it. Reconnects now remove the dead channel from the client.
+- Fixed the header members panel wrapping/misaligning when a member with a
+  longer name was typing: the "is typing" mark overflowed its cell. The name now
+  shrinks to keep the mark inside the cell.
 
 ### Changed
 - Stock quotes for US, HK, and CN markets now come from Tencent (`qt.gtimg.cn`)
