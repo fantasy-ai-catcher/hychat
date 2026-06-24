@@ -82,7 +82,8 @@ supabase/
 │                             room_watchlist add/remove system-message trigger, …);
 │                             room enter/leave activity is client-side presence, not a DB trigger;
 │                             room_presence + heartbeat_presence / active_rooms_with_symbols RPCs,
-│                             yahoo_auth crumb cache, watchlist cap trigger, pg_cron 10s refresh job;
+│                             yahoo_auth crumb cache, watchlist cap trigger, pg_cron 10s refresh job
+│                             (cron skips invoking the edge function when no room is active);
 │                             newest migration is the source of truth
 └── functions/
     ├── get-stock-quotes/
@@ -96,6 +97,10 @@ supabase/
                               market; English US name from field 46) + GBK fetch shell;
                               routing-provider.ts: splitByMarket + createRoutingProvider
                               (US/HK/CN -> Tencent, JP -> Yahoo; throws only if every leg fails);
+                              sina-extended.ts: US pre/post overlay — usMarketSession +
+                              parseSinaExtended + createExtendedHoursProvider (wraps the Tencent
+                              leg, swaps US price/change to Sina hq.sinajs.cn extended values
+                              during pre/post, pass-through otherwise);
                               yahoo.ts: Yahoo v7 batch quote + cookie/crumb auth, JP-only now;
                               cache.ts: batched TTL/backoff resolveStockQuotes (display name
                               comes straight from each provider quote);

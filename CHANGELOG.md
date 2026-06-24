@@ -8,6 +8,10 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- US stocks now show pre-market and after-hours prices during those sessions
+  (sourced from Sina). Outside extended hours nothing changes.
+
 ### Changed
 - Stock quotes for US, HK, and CN markets now come from Tencent (`qt.gtimg.cn`)
   instead of Yahoo Finance — no auth, fewer outages. Yahoo is kept only for
