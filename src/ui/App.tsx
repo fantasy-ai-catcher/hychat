@@ -44,7 +44,8 @@ import {
   type PickerDirection
 } from './color-picker.js';
 import { moveItem, type ReorderDirection } from './reorder.js';
-import { buildRenderLines, sliceWindow } from './scroll.js';
+import { buildRenderLines, sliceWindow, type MentionContext } from './scroll.js';
+import type { MentionSpan } from './mentions.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
 import { isMouseSequence, watchTerminalMouse } from './terminal-mouse.js';
 
@@ -201,6 +202,16 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const [reorderItems, setReorderItems] = useState<WatchlistQuote[]>([]);
   const [reorderIndex, setReorderIndex] = useState(0);
   const [reorderGrabbed, setReorderGrabbed] = useState(false);
+
+  // @mention picker (composer-local; opened by typing `@` at a word boundary).
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionMembers = selectMembers(
+    fixedState ?? snapshot.state,
+    (fixedState ?? snapshot.state).activeRoomId,
+    snapshot.user?.id,
+    focused
+  );
   const watchReorderOpen = snapshot.watchReorderOpen;
   useEffect(() => {
     if (watchReorderOpen) {
@@ -292,6 +303,35 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       return; // reorder swallows all other keys
     }
 
+    if (mentionOpen) {
+      if (key.ctrl && value === 'c') {
+        exit();
+        return;
+      }
+      if (key.escape) {
+        setMentionOpen(false);
+        setBuffer((current) => applyEditorAction(current, { type: 'insert', text: '@' }));
+        return;
+      }
+      if (key.return || key.tab) {
+        const name = mentionMembers[mentionIndex]?.displayName ?? mentionMembers[mentionIndex]?.userId;
+        setMentionOpen(false);
+        if (name) {
+          setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${name} ` }));
+        }
+        return;
+      }
+      if (key.upArrow) {
+        setMentionIndex((current) => Math.max(0, current - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setMentionIndex((current) => Math.min(mentionMembers.length - 1, current + 1));
+        return;
+      }
+      return; // mention picker swallows all other keys
+    }
+
     if (key.ctrl && value === 'c') {
       exit();
       return;
@@ -339,6 +379,18 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       setScrollOffset(0);
       void submitLine(submitted);
       return;
+    }
+
+    // Typing `@` at a word boundary (start or after whitespace), in a room with
+    // members, opens the mention picker instead of inserting the character.
+    if (value === '@' && !key.ctrl && !key.meta && mentionMembers.length > 0) {
+      const chars = [...buffer.value];
+      const before = buffer.cursor > 0 ? chars[buffer.cursor - 1] : undefined;
+      if (before === undefined || /\s/.test(before)) {
+        setMentionIndex(0);
+        setMentionOpen(true);
+        return;
+      }
     }
 
     const action = resolveEditorAction(value, key);
@@ -400,6 +452,10 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       reorderItems={reorderItems}
       reorderIndex={reorderIndex}
       reorderGrabbed={reorderGrabbed}
+      mentionOpen={mentionOpen}
+      mentionMembers={mentionMembers}
+      mentionIndex={mentionIndex}
+      selfName={snapshot.user?.displayName}
     />
   );
 }
@@ -435,6 +491,11 @@ type AppShellProps = {
   reorderItems?: WatchlistQuote[];
   reorderIndex?: number;
   reorderGrabbed?: boolean;
+  // @mention picker + the data needed to highlight mentions in the chat.
+  mentionOpen?: boolean;
+  mentionMembers?: MemberView[];
+  mentionIndex?: number;
+  selfName?: string;
 };
 
 export function AppShell({
@@ -463,7 +524,11 @@ export function AppShell({
   watchReorderOpen = false,
   reorderItems = [],
   reorderIndex = 0,
-  reorderGrabbed = false
+  reorderGrabbed = false,
+  mentionOpen = false,
+  mentionMembers = [],
+  mentionIndex = 0,
+  selfName
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
@@ -487,13 +552,21 @@ export function AppShell({
   // The reorder panel is a vertical list: one row per stock plus 4 rows of
   // chrome (top+bottom border, title, hint).
   const reorderHeight = watchReorderOpen ? reorderItems.length + 4 : 0;
-  const bottomHeight = statusHeight + 3 + inputLines + pickerHeight + reorderHeight;
+  const mentionHeight = mentionOpen ? mentionMembers.length + 4 : 0;
+  const bottomHeight = statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight;
+  // Highlight @<name> tokens (any room member) and mark messages that mention me.
+  const mentionContext: MentionContext = {
+    memberNames: selectMembers(state, roomId, currentUserId, currentUserActive).map(
+      (member) => member.displayName ?? member.userId
+    ),
+    selfName
+  };
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
 
   // The chat scrolls by pre-wrapped line, so the ceiling depends on the real
   // wrapped line count, not the message count. Report it up so the offset stays
   // clamped, and derive how many rows are currently hidden below the viewport.
-  const totalLines = buildRenderLines(messages, terminalWidth, !!showTimestamps).length;
+  const totalLines = buildRenderLines(messages, terminalWidth, !!showTimestamps, mentionContext).length;
   const maxOffset = Math.max(0, totalLines - chatHeight);
   const hiddenBelow = Math.min(Math.max(0, scrollOffset), maxOffset);
   if (maxOffsetRef) {
@@ -540,7 +613,8 @@ export function AppShell({
         width: terminalWidth,
         height: chatHeight,
         scrollOffset,
-        showTimestamps
+        showTimestamps,
+        mentionContext
       })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
         {colorPickerOpen ? (
@@ -548,6 +622,9 @@ export function AppShell({
         ) : null}
         {watchReorderOpen ? (
           <WatchReorder items={reorderItems} index={reorderIndex} grabbed={reorderGrabbed} />
+        ) : null}
+        {mentionOpen ? (
+          <MentionPicker members={mentionMembers} index={mentionIndex} />
         ) : null}
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
         <InputComposer
@@ -774,6 +851,35 @@ export function WatchReorder({ items, index, grabbed }: WatchReorderProps) {
   );
 }
 
+export type MentionPickerProps = {
+  members: MemberView[];
+  index: number;
+};
+
+export function MentionPicker({ members, index }: MentionPickerProps) {
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+      <Text bold>Mention someone</Text>
+      <Text dimColor>↑↓ to move · Enter to insert · Esc to cancel</Text>
+      {members.map((member, rowIndex) => {
+        const selected = rowIndex === index;
+        const name = member.displayName ?? member.userId;
+        return (
+          <Box key={member.userId}>
+            <Text
+              color={selected ? undefined : resolveProfileColor(member.displayColor)}
+              inverse={selected}
+              bold={selected}
+            >
+              {selected ? '▸' : ' '} @{name}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 export function TopInfoPanel({
   state,
   userLabel,
@@ -893,19 +999,46 @@ export type MessageViewportProps = {
   scrollOffset?: number;
   showTimestamps?: boolean;
   height: number;
+  mentionContext?: MentionContext;
 };
+
+// Split a row body into plain / `@<name>` segments so the mentions can be
+// accent-colored. Returns one plain segment when there are no mention spans.
+function renderMentionBody(body: string, spans: MentionSpan[] | undefined): React.ReactNode {
+  if (!spans || spans.length === 0) {
+    return body;
+  }
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  spans.forEach((span, index) => {
+    if (span.start > cursor) {
+      parts.push(body.slice(cursor, span.start));
+    }
+    parts.push(
+      <Text key={index} color="cyanBright" bold>
+        {body.slice(span.start, span.end)}
+      </Text>
+    );
+    cursor = span.end;
+  });
+  if (cursor < body.length) {
+    parts.push(body.slice(cursor));
+  }
+  return parts;
+}
 
 export function MessageViewport({
   messages,
   width,
   scrollOffset = 0,
   height,
-  showTimestamps
+  showTimestamps,
+  mentionContext
 }: MessageViewportProps) {
   const innerWidth = width ?? process.stdout.columns ?? 80;
   // Pre-wrap to one row per line, then slice the window so older history is
   // reachable by scrolling instead of being dropped off the top.
-  const allLines = buildRenderLines(messages, innerWidth, !!showTimestamps);
+  const allLines = buildRenderLines(messages, innerWidth, !!showTimestamps, mentionContext);
   const { lines } = sliceWindow(allLines, height, scrollOffset);
 
   return (
@@ -924,6 +1057,8 @@ export function MessageViewport({
             </Box>
           ) : (
             <Box key={index} flexDirection="row">
+              {/* A message that mentions me gets a bright gutter bar. */}
+              {line.mentionsMe ? <Text color="cyanBright">▎</Text> : null}
               {line.timestamp ? (
                 <Text color="gray" dimColor>
                   {line.timestamp}
@@ -932,7 +1067,7 @@ export function MessageViewport({
               {line.senderLabel ? (
                 <Text color={resolveProfileColor(line.senderColor)}>{line.senderLabel} </Text>
               ) : null}
-              <Text>{line.body}</Text>
+              <Text>{renderMentionBody(line.body ?? '', line.mentions)}</Text>
             </Box>
           )
         )
