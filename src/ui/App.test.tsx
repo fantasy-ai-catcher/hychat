@@ -5,6 +5,7 @@ import {
   App,
   AppShell,
   ColorPicker,
+  WatchReorder,
   InputComposer,
   isPanelToggle,
   MessageViewport,
@@ -538,6 +539,23 @@ describe('App', () => {
     expect(text).toContain('default'); // the leading default cell
     expect(text).toContain('sage');
     expect(text).toContain('gray');
+  });
+
+  it('lists every watched stock in the reorder panel', () => {
+    const text = collectText(
+      WatchReorder({
+        items: [
+          { symbol: 'AAPL.US', name: 'Apple Inc.' },
+          { symbol: '0700.HK', name: '腾讯控股' }
+        ],
+        index: 0,
+        grabbed: false
+      })
+    );
+    expect(text).toContain('Apple Inc.');
+    expect(text).toContain('AAPL.US');
+    expect(text).toContain('腾讯控股');
+    expect(text).toContain('0700.HK');
   });
 
   it('renders message sender names with their profile color', () => {
