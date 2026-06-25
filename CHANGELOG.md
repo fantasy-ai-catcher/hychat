@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-25
+
 ### Added
 - @mention a room member: type `@` to open a member picker (`↑↓`, Enter to
   insert `@name`, Esc to cancel). The `@name` shows highlighted for everyone, and
