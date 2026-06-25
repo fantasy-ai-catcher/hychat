@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-25
+
 ### Added
 - `/watch reorder` opens an interactive panel above the input box to reorder the
   room's stock watchlist: `↑↓` to move, `Space` to grab/drop a stock, `Enter` to
