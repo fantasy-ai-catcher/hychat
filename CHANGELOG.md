@@ -8,6 +8,15 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- Reply to a message: double-click it in the chat to start a reply (a banner
+  shows what you're replying to; Esc cancels). The reply shows a dim
+  `name: snippet` quote above it for everyone.
+
+### Changed
+- @mentions look cleaner: mentioning someone else is just colored text, and a
+  mention of you shows as a highlighted pill (the old `▎` marker is gone).
+
 ### Fixed
 - Fixed the real cause of the out-of-memory crash: the app ran React in
   development mode, which emits per-render performance-timing entries that pile
