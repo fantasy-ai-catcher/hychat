@@ -1162,10 +1162,10 @@ export function MessageViewport({
               </Text>
             </Box>
           ) : line.kind === 'reply' ? (
-            // Quoted parent shown above a reply: a soft `▎` bar marks it as a
-            // quote, dim text de-emphasizes it (no `name:` colon, so it doesn't
-            // read like a re-sent message).
-            <Box key={index} flexDirection="row">
+            // Quoted parent shown above a reply: indented forward with a soft
+            // `▎` bar and dim text (no `name:` colon), so the inset quote reads
+            // as a quote and is easy to tell apart from the reply below it.
+            <Box key={index} flexDirection="row" paddingLeft={2}>
               <Text color="gray">▎ </Text>
               <Text dimColor>
                 {line.replyQuote?.name} {line.replyQuote?.snippet}

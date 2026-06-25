@@ -64,7 +64,7 @@ describe('buildRenderLines', () => {
     expect(lines[0].mentions).toBeUndefined();
   });
 
-  it('emits a dim reply-quote row above a message that replies to another', () => {
+  it('emits a dim reply-quote row above a reply, leaving the body at the margin', () => {
     const reply = {
       ...text('2', 'agreed'),
       metadata: { replyTo: '1', replyToName: 'alice', replyToSnippet: 'buy maotai' }

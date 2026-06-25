@@ -98,7 +98,9 @@ export function buildRenderLines(
       continue;
     }
 
-    // A reply shows a dim "name: snippet" quote row above its body.
+    // A reply shows a dim, indented "▎ name snippet" quote row above its body.
+    // The body row stays at the normal left margin, so the inset quote is easy
+    // to tell apart from the reply itself.
     const quote = replyQuoteOf(message);
     if (quote) {
       lines.push({ kind: 'reply', replyQuote: quote, messageId: message.id });
