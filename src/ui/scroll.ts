@@ -28,11 +28,9 @@ export type RenderLine = {
   // message (set on every row of a text message, incl. its reply-quote row).
   messageId?: string;
   // For a `kind: 'reply'` row: the quoted parent (sender + snippet) shown dim
-  // above the reply body.
+  // above the reply body. `senderColor` colors the `▎` bar with the replier's
+  // profile color so consecutive replies don't blur into one gray bar.
   replyQuote?: { name: string; snippet: string };
-  // True on every row of a reply (quote + body) so a continuous "▎ " bar joins
-  // them into one block. (The quote text is indented further; the body is not.)
-  replyBar?: boolean;
 };
 
 // Pull the quoted-reply preview a message carries in its metadata, if any.
@@ -101,19 +99,23 @@ export function buildRenderLines(
       continue;
     }
 
-    // A reply renders a continuous "▎ " bar down its whole block (quote + body).
-    // The quote text is indented further than the body, so the inset quote is
-    // easy to tell from the reply while the bar groups them as one unit.
+    // A reply shows a "▎ " quote row above its body: the bar is colored with the
+    // replier's profile color, the quote text is indented and dim. The body row
+    // stays at the normal left margin (no bar, no indent).
     const quote = replyQuoteOf(message);
-    const barWidth = quote ? 2 : 0; // "▎ " on every row
     if (quote) {
-      lines.push({ kind: 'reply', replyQuote: quote, messageId: message.id, replyBar: true });
+      lines.push({
+        kind: 'reply',
+        replyQuote: quote,
+        senderColor: message.senderColor,
+        messageId: message.id
+      });
     }
 
     const senderLabel = `${message.senderName ?? message.senderId}:`;
-    // First row budget is reduced by the timestamp + "label " prefix and the bar.
+    // First row budget is reduced by the timestamp + "label " prefix.
     const prefixWidth = tsWidth + stringWidth(senderLabel) + 1;
-    const rows = wrapByWidth(message.body, width - prefixWidth - barWidth, width - barWidth);
+    const rows = wrapByWidth(message.body, width - prefixWidth, width);
     rows.forEach((row, index) => {
       const mentions =
         memberNames.length > 0 ? findMentionSpans(row, memberNames) : undefined;
@@ -127,10 +129,9 @@ export function buildRenderLines(
               senderColor: message.senderColor,
               timestamp: tsPrefix || undefined,
               mentions: spans,
-              messageId: message.id,
-              replyBar: quote ? true : undefined
+              messageId: message.id
             }
-          : { kind: 'text', body: row, mentions: spans, messageId: message.id, replyBar: quote ? true : undefined }
+          : { kind: 'text', body: row, mentions: spans, messageId: message.id }
       );
     });
   }
