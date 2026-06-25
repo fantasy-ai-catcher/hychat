@@ -50,29 +50,32 @@ describe('buildRenderLines', () => {
     expect(lines[0].timestamp).toMatch(/\d\d:\d\d $/);
   });
 
-  it('attaches mention spans and flags messages that mention me', () => {
+  it('attaches mention spans and the message id to each text row', () => {
     const lines = buildRenderLines([text('1', 'hey @alice ok')], 80, false, {
       memberNames: ['alice'],
       selfName: 'alice'
     });
     expect(lines[0].mentions).toEqual([{ start: 4, end: 10, name: 'alice' }]);
-    expect(lines[0].mentionsMe).toBe(true);
+    expect(lines[0].messageId).toBe('1');
   });
 
-  it('leaves mentions undefined and mentionsMe false without a mention context', () => {
+  it('leaves mentions undefined without a mention context', () => {
     const lines = buildRenderLines([text('1', 'hey @alice')], 80, false);
     expect(lines[0].mentions).toBeUndefined();
-    expect(lines[0].mentionsMe).toBe(false);
   });
 
-  it('reserves a column for the mention-me gutter when wrapping', () => {
-    const msg = { ...text('1', '@m xyz'), senderName: 'm', senderId: 'm' };
-    // Same body+width; only "am I mentioned" differs. The gutter shrinks the
-    // wrap budget by 1, so the mentioned-me render wraps to more rows.
-    const mine = buildRenderLines([msg], 5, false, { memberNames: ['m'], selfName: 'm' });
-    const notMine = buildRenderLines([msg], 5, false, { memberNames: ['m'], selfName: 'x' });
-    expect(mine.length).toBeGreaterThan(notMine.length);
-    expect(mine.every((line) => line.mentionsMe)).toBe(true);
+  it('emits a dim reply-quote row above a message that replies to another', () => {
+    const reply = {
+      ...text('2', 'agreed'),
+      metadata: { replyTo: '1', replyToName: 'alice', replyToSnippet: 'buy maotai' }
+    };
+    const lines = buildRenderLines([reply], 80, false);
+    expect(lines[0]).toMatchObject({
+      kind: 'reply',
+      messageId: '2',
+      replyQuote: { name: 'alice', snippet: 'buy maotai' }
+    });
+    expect(lines[1]).toMatchObject({ kind: 'text', body: 'agreed', messageId: '2' });
   });
 });
 
