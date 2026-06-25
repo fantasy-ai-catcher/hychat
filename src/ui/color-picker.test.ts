@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   colorPickerColumns,
+  colorPickerHeight,
   movePickerSelection,
   pickerColorNames,
   pickerGridRows
@@ -58,5 +59,13 @@ describe('pickerGridRows', () => {
       [3, 4, 5],
       [6]
     ]);
+  });
+});
+
+describe('colorPickerHeight', () => {
+  // 14 cells (default + 13). width 100 -> 4 cols -> 4 rows -> 8; width 60 -> 2 cols -> 7 rows -> 11.
+  it('is the grid row count plus 4 rows of chrome', () => {
+    expect(colorPickerHeight(100)).toBe(8);
+    expect(colorPickerHeight(60)).toBe(11);
   });
 });

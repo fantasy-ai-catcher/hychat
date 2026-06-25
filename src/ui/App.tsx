@@ -37,6 +37,7 @@ import {
 } from './state.js';
 import {
   colorPickerColumns,
+  colorPickerHeight,
   movePickerSelection,
   pickerColorNames,
   pickerGridRows,
@@ -318,16 +319,6 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
     return null;
   }
 
-  if (snapshot.colorPickerOpen) {
-    return (
-      <ColorPicker
-        index={pickerIndex}
-        terminalWidth={terminalColumns}
-        currentColor={snapshot.user?.displayColor}
-      />
-    );
-  }
-
   return (
     <AppShell
       state={activeState}
@@ -351,6 +342,9 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       maxOffsetRef={maxOffsetRef}
       height={terminalRows}
       width={terminalColumns}
+      colorPickerOpen={snapshot.colorPickerOpen}
+      pickerIndex={pickerIndex}
+      pickerCurrentColor={snapshot.user?.displayColor}
     />
   );
 }
@@ -376,6 +370,11 @@ type AppShellProps = {
   maxOffsetRef?: { current: number };
   height?: number;
   width?: number;
+  // The color picker pops up above the input composer when open; the chat
+  // shrinks by the picker's height to make room.
+  colorPickerOpen?: boolean;
+  pickerIndex?: number;
+  pickerCurrentColor?: string;
 };
 
 export function AppShell({
@@ -397,7 +396,10 @@ export function AppShell({
   scrollOffset = 0,
   maxOffsetRef,
   height,
-  width
+  width,
+  colorPickerOpen = false,
+  pickerIndex = 0,
+  pickerCurrentColor
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
@@ -415,7 +417,10 @@ export function AppShell({
   // The composer is 2 border rows plus one row per input line, so multiline
   // input grows the bottom region (and shrinks the chat) instead of overflowing.
   const inputLines = input.split('\n').length;
-  const bottomHeight = statusHeight + 3 + inputLines;
+  // The color picker pops up just above the input composer; reserve its height
+  // in the bottom region so the chat shrinks rather than overflowing.
+  const pickerHeight = colorPickerOpen ? colorPickerHeight(terminalWidth) : 0;
+  const bottomHeight = statusHeight + 3 + inputLines + pickerHeight;
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
 
   // The chat scrolls by pre-wrapped line, so the ceiling depends on the real
@@ -429,12 +434,15 @@ export function AppShell({
   }
 
   if (resolveShellView(state) === 'welcome') {
-    const welcomeHeight = Math.max(shellHeight - statusHeight - 2 - inputLines, 4);
+    const welcomeHeight = Math.max(shellHeight - statusHeight - 2 - inputLines - pickerHeight, 4);
 
     return (
       <Box flexDirection="column" height={shellHeight}>
         {WelcomeScreen({ userLabel, height: welcomeHeight })}
         <Box flexDirection="column" flexShrink={0}>
+          {colorPickerOpen ? (
+            <ColorPicker index={pickerIndex} terminalWidth={terminalWidth} currentColor={pickerCurrentColor} />
+          ) : null}
           <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
           <InputComposer
             promptLabel={promptLabel}
@@ -468,6 +476,9 @@ export function AppShell({
         showTimestamps
       })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
+        {colorPickerOpen ? (
+          <ColorPicker index={pickerIndex} terminalWidth={terminalWidth} currentColor={pickerCurrentColor} />
+        ) : null}
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
         <InputComposer
           promptLabel={promptLabel}

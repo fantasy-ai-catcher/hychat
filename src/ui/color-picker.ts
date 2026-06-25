@@ -41,3 +41,11 @@ export function pickerGridRows<T>(items: T[], columns: number): T[][] {
   }
   return rows;
 }
+
+// Rendered height of the picker panel: one row per grid row plus 4 rows of
+// chrome (top+bottom border, the title line, and the hint line). The host
+// layout adds this to the bottom region so the chat shrinks to make room.
+export function colorPickerHeight(terminalWidth: number): number {
+  const rowCount = pickerGridRows(pickerColorNames(), colorPickerColumns(terminalWidth)).length;
+  return rowCount + 4;
+}
