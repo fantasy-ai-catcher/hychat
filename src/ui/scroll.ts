@@ -84,10 +84,14 @@ export function buildRenderLines(
     }
 
     const senderLabel = `${message.senderName ?? message.senderId}:`;
+    const mentionsMe = mentionContext ? mentionsName(message.body, mentionContext.selfName) : false;
+    // A mention-of-me message renders a 1-column "▎" gutter on every row, so
+    // reserve that column on every row's wrap budget too — otherwise the body
+    // overflows by one column and the line count (scroll math) is off.
+    const gutterWidth = mentionsMe ? 1 : 0;
     // First row budget is reduced by the timestamp + "label " prefix.
     const prefixWidth = tsWidth + stringWidth(senderLabel) + 1;
-    const rows = wrapByWidth(message.body, width - prefixWidth, width);
-    const mentionsMe = mentionContext ? mentionsName(message.body, mentionContext.selfName) : false;
+    const rows = wrapByWidth(message.body, width - prefixWidth - gutterWidth, width - gutterWidth);
     rows.forEach((row, index) => {
       const mentions =
         memberNames.length > 0 ? findMentionSpans(row, memberNames) : undefined;

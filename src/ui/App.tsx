@@ -164,10 +164,12 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
     });
   }, []);
 
-  // Jump back to the latest when switching rooms.
+  // Jump back to the latest when switching rooms, and close the mention picker
+  // so it can't linger into a different room's member list.
   const activeRoomId = (fixedState ?? snapshot.state).activeRoomId;
   useEffect(() => {
     setScrollOffset(0);
+    setMentionOpen(false);
   }, [activeRoomId]);
 
   useEffect(() => {
@@ -555,10 +557,9 @@ export function AppShell({
   const mentionHeight = mentionOpen ? mentionMembers.length + 4 : 0;
   const bottomHeight = statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight;
   // Highlight @<name> tokens (any room member) and mark messages that mention me.
+  // Reuse the member list already computed for the picker rather than re-deriving.
   const mentionContext: MentionContext = {
-    memberNames: selectMembers(state, roomId, currentUserId, currentUserActive).map(
-      (member) => member.displayName ?? member.userId
-    ),
+    memberNames: mentionMembers.map((member) => member.displayName ?? member.userId),
     selfName
   };
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);

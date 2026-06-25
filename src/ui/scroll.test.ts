@@ -64,6 +64,16 @@ describe('buildRenderLines', () => {
     expect(lines[0].mentions).toBeUndefined();
     expect(lines[0].mentionsMe).toBe(false);
   });
+
+  it('reserves a column for the mention-me gutter when wrapping', () => {
+    const msg = { ...text('1', '@m xyz'), senderName: 'm', senderId: 'm' };
+    // Same body+width; only "am I mentioned" differs. The gutter shrinks the
+    // wrap budget by 1, so the mentioned-me render wraps to more rows.
+    const mine = buildRenderLines([msg], 5, false, { memberNames: ['m'], selfName: 'm' });
+    const notMine = buildRenderLines([msg], 5, false, { memberNames: ['m'], selfName: 'x' });
+    expect(mine.length).toBeGreaterThan(notMine.length);
+    expect(mine.every((line) => line.mentionsMe)).toBe(true);
+  });
 });
 
 describe('sliceWindow', () => {
