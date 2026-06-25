@@ -47,7 +47,13 @@ import { moveItem, type ReorderDirection } from './reorder.js';
 import { buildRenderLines, sliceWindow, type MentionContext } from './scroll.js';
 import type { MentionSpan } from './mentions.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
-import { isMouseSequence, watchTerminalMouse } from './terminal-mouse.js';
+import {
+  isDoubleClick,
+  isMouseSequence,
+  watchTerminalMouse,
+  type ClickStamp
+} from './terminal-mouse.js';
+import { buildReplySnippet } from './reply.js';
 
 // Rows the mouse wheel scrolls per notch.
 const WHEEL_STEP = 3;
@@ -157,13 +163,37 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   // Mouse wheel scrolls the chat history. Enabling reporting captures native
   // text selection, so users hold Option/Shift to select (see terminal-mouse).
   useEffect(() => {
-    return watchTerminalMouse((direction) => {
-      if (direction === 'up') {
-        scrollUp(WHEEL_STEP);
-      } else {
-        scrollDown(WHEEL_STEP);
+    return watchTerminalMouse(
+      (direction) => {
+        if (direction === 'up') {
+          scrollUp(WHEEL_STEP);
+        } else {
+          scrollDown(WHEEL_STEP);
+        }
+      },
+      { stdin: process.stdin, stdout: process.stdout },
+      (click) => {
+        const stamp: ClickStamp = { ...click, x: click.x, y: click.y, t: Date.now() };
+        const isDouble = isDoubleClick(lastClickRef.current, stamp);
+        lastClickRef.current = stamp;
+        if (!isDouble) {
+          return;
+        }
+        const messageId = clickMapRef.current.get(click.y);
+        if (!messageId) {
+          return;
+        }
+        const state = activeStateRef.current;
+        const roomId = state.activeRoomId;
+        const message = roomId
+          ? (state.messagesByRoom[roomId] ?? []).find((m) => m.id === messageId)
+          : undefined;
+        if (message && message.kind === 'text') {
+          const { name, snippet } = buildReplySnippet(message);
+          setReplyTarget({ id: message.id, name, snippet });
+        }
       }
-    });
+    );
   }, []);
 
   // Jump back to the latest when switching rooms, and close the mention picker
@@ -172,6 +202,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   useEffect(() => {
     setScrollOffset(0);
     setMentionOpen(false);
+    setReplyTarget(null);
   }, [activeRoomId]);
 
   useEffect(() => {
@@ -207,6 +238,19 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const [reorderIndex, setReorderIndex] = useState(0);
   const [reorderGrabbed, setReorderGrabbed] = useState(false);
 
+  // Reply: double-clicking a chat message sets it as the reply target, shown in
+  // a banner above the composer until you send (Enter) or cancel (Esc).
+  const [replyTarget, setReplyTarget] = useState<{ id: string; name: string; snippet: string } | null>(
+    null
+  );
+  // MessageViewport writes screen-row -> messageId here each render; a click maps
+  // its row through this. The latest active state is kept in a ref so the (once-
+  // created) mouse handler can resolve the clicked message without stale closure.
+  const clickMapRef = useRef(new Map<number, string>());
+  const lastClickRef = useRef<ClickStamp | null>(null);
+  const activeStateRef = useRef(fixedState ?? snapshot.state);
+  activeStateRef.current = fixedState ?? snapshot.state;
+
   // @mention picker (composer-local; opened by typing `@` at a word boundary).
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -238,7 +282,14 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       return;
     }
 
-    setSnapshot(await session.handleLine(line));
+    // Attach the reply target (if any) as the message's metadata, then clear it.
+    const reply = replyTarget
+      ? { replyTo: replyTarget.id, replyToName: replyTarget.name, replyToSnippet: replyTarget.snippet }
+      : undefined;
+    if (reply && !trimmed.startsWith('/')) {
+      setReplyTarget(null);
+    }
+    setSnapshot(await session.handleLine(line, reply && !trimmed.startsWith('/') ? reply : undefined));
   }
 
   useInput((value, key) => {
@@ -338,6 +389,12 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
 
     if (key.ctrl && value === 'c') {
       exit();
+      return;
+    }
+
+    // Esc cancels a pending reply (when nothing modal is open).
+    if (key.escape && replyTarget) {
+      setReplyTarget(null);
       return;
     }
 
@@ -460,6 +517,8 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       mentionMembers={mentionMembers}
       mentionIndex={mentionIndex}
       selfName={snapshot.user?.displayName}
+      replyTarget={replyTarget}
+      clickMapRef={clickMapRef}
     />
   );
 }
@@ -500,6 +559,8 @@ type AppShellProps = {
   mentionMembers?: MemberView[];
   mentionIndex?: number;
   selfName?: string;
+  replyTarget?: { id: string; name: string; snippet: string } | null;
+  clickMapRef?: { current: Map<number, string> };
 };
 
 export function AppShell({
@@ -532,7 +593,9 @@ export function AppShell({
   mentionOpen = false,
   mentionMembers = [],
   mentionIndex = 0,
-  selfName
+  selfName,
+  replyTarget,
+  clickMapRef
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
@@ -557,7 +620,9 @@ export function AppShell({
   // chrome (top+bottom border, title, hint).
   const reorderHeight = watchReorderOpen ? reorderItems.length + 4 : 0;
   const mentionHeight = mentionOpen ? mentionMembers.length + 4 : 0;
-  const bottomHeight = statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight;
+  const replyBannerHeight = replyTarget ? 1 : 0;
+  const bottomHeight =
+    statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight + replyBannerHeight;
   // Highlight @<name> tokens (any room member) and mark messages that mention me.
   // Reuse the member list already computed for the picker rather than re-deriving.
   const mentionContext: MentionContext = {
@@ -617,7 +682,9 @@ export function AppShell({
         height: chatHeight,
         scrollOffset,
         showTimestamps,
-        mentionContext
+        mentionContext,
+        topRow: topHeight,
+        clickMapRef
       })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
         {colorPickerOpen ? (
@@ -628,6 +695,11 @@ export function AppShell({
         ) : null}
         {mentionOpen ? (
           <MentionPicker members={mentionMembers} index={mentionIndex} />
+        ) : null}
+        {replyTarget ? (
+          <Text dimColor>
+            ↳ Replying to {replyTarget.name}: {replyTarget.snippet}  (Esc to cancel)
+          </Text>
         ) : null}
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
         <InputComposer
@@ -1003,11 +1075,19 @@ export type MessageViewportProps = {
   showTimestamps?: boolean;
   height: number;
   mentionContext?: MentionContext;
+  // 0-based screen row of the viewport's first line; with clickMapRef it lets a
+  // mouse click map a screen row back to the message rendered there.
+  topRow?: number;
+  clickMapRef?: { current: Map<number, string> };
 };
 
-// Split a row body into plain / `@<name>` segments so the mentions can be
-// accent-colored. Returns one plain segment when there are no mention spans.
-function renderMentionBody(body: string, spans: MentionSpan[] | undefined): React.ReactNode {
+// Split a row body into plain / `@<name>` segments. A mention of me renders as a
+// light-background pill; mentions of others are just font-colored.
+function renderMentionBody(
+  body: string,
+  spans: MentionSpan[] | undefined,
+  selfName?: string
+): React.ReactNode {
   if (!spans || spans.length === 0) {
     return body;
   }
@@ -1017,10 +1097,18 @@ function renderMentionBody(body: string, spans: MentionSpan[] | undefined): Reac
     if (span.start > cursor) {
       parts.push(body.slice(cursor, span.start));
     }
+    const token = body.slice(span.start, span.end);
+    const isMe = selfName !== undefined && span.name === selfName;
     parts.push(
-      <Text key={index} color="cyanBright" bold>
-        {body.slice(span.start, span.end)}
-      </Text>
+      isMe ? (
+        <Text key={index} backgroundColor="#3b5b8c" color="whiteBright">
+          {token}
+        </Text>
+      ) : (
+        <Text key={index} color="cyan">
+          {token}
+        </Text>
+      )
     );
     cursor = span.end;
   });
@@ -1036,13 +1124,26 @@ export function MessageViewport({
   scrollOffset = 0,
   height,
   showTimestamps,
-  mentionContext
+  mentionContext,
+  topRow = 0,
+  clickMapRef
 }: MessageViewportProps) {
   const innerWidth = width ?? process.stdout.columns ?? 80;
   // Pre-wrap to one row per line, then slice the window so older history is
   // reachable by scrolling instead of being dropped off the top.
   const allLines = buildRenderLines(messages, innerWidth, !!showTimestamps, mentionContext);
   const { lines } = sliceWindow(allLines, height, scrollOffset);
+
+  // Record which message sits on each visible screen row (1-based, as the
+  // terminal reports clicks) so a double-click can find the message it hit.
+  if (clickMapRef) {
+    clickMapRef.current = new Map();
+    lines.forEach((line, index) => {
+      if (line.messageId) {
+        clickMapRef.current.set(topRow + index + 1, line.messageId);
+      }
+    });
+  }
 
   return (
     <Box flexDirection="column" height={height} flexGrow={1} overflow="hidden">
@@ -1058,10 +1159,15 @@ export function MessageViewport({
                 {line.text}
               </Text>
             </Box>
+          ) : line.kind === 'reply' ? (
+            // Dim "name: snippet" quote shown above a reply's body.
+            <Box key={index} flexDirection="row">
+              <Text dimColor>
+                {line.replyQuote?.name}: {line.replyQuote?.snippet}
+              </Text>
+            </Box>
           ) : (
             <Box key={index} flexDirection="row">
-              {/* A message that mentions me gets a bright gutter bar. */}
-              {line.mentionsMe ? <Text color="cyanBright">▎</Text> : null}
               {line.timestamp ? (
                 <Text color="gray" dimColor>
                   {line.timestamp}
@@ -1070,7 +1176,7 @@ export function MessageViewport({
               {line.senderLabel ? (
                 <Text color={resolveProfileColor(line.senderColor)}>{line.senderLabel} </Text>
               ) : null}
-              <Text>{renderMentionBody(line.body ?? '', line.mentions)}</Text>
+              <Text>{renderMentionBody(line.body ?? '', line.mentions, mentionContext?.selfName)}</Text>
             </Box>
           )
         )
