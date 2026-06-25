@@ -191,6 +191,8 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
         if (message && message.kind === 'text') {
           const { name, snippet } = buildReplySnippet(message);
           setReplyTarget({ id: message.id, name, snippet });
+          // Prefill the composer with a mention of the person being replied to.
+          setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${name} ` }));
         }
       }
     );
