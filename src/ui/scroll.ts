@@ -106,7 +106,7 @@ export function buildRenderLines(
     // whole block — the quote row and every body row. Text sits right after the
     // bar with no extra indent; the quote is dim, the body is normal.
     const quote = replyQuoteOf(message);
-    const barWidth = quote ? 2 : 0; // "▎ "
+    const barWidth = quote ? 1 : 0; // body bar is a bare "▎" (text hugs it)
     if (quote) {
       lines.push({
         kind: 'reply',

@@ -1174,9 +1174,10 @@ export function MessageViewport({
             </Box>
           ) : (
             <Box key={index} flexDirection="row">
-              {/* Reply body rows share the same colored "▎ " bar; text right after. */}
+              {/* Reply body row: the colored bar with the text hugging it (no
+                  space), so the body is not indented past the bar. */}
               {line.replyBar ? (
-                <Text color={resolveProfileColor(line.senderColor)}>▎ </Text>
+                <Text color={resolveProfileColor(line.senderColor)}>▎</Text>
               ) : null}
               {line.timestamp ? (
                 <Text color="gray" dimColor>
