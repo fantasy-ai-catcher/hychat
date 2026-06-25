@@ -8,6 +8,13 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- Fixed the real cause of the out-of-memory crash: the app ran React in
+  development mode, which emits per-render performance-timing entries that pile
+  up in Node's never-cleared buffer until the heap is exhausted. The app now
+  defaults to production mode, so the heap stays flat regardless of how long it
+  runs (the v0.7.1 caret change only slowed the leak; this removes it).
+
 ## [0.7.1] - 2026-06-25
 
 ### Fixed
