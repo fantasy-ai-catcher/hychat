@@ -91,6 +91,8 @@ supabase/
 │                             room_presence + heartbeat_presence / active_rooms_with_symbols RPCs,
 │                             yahoo_auth crumb cache, watchlist cap trigger, pg_cron 10s refresh job
 │                             (cron skips invoking the edge function when no room is active);
+│                             profiles/messages display_color CHECK + update_profile_color RPC
+│                             validate the muted palette (must match src/app/profile-colors.ts);
 │                             newest migration is the source of truth
 └── functions/
     ├── get-stock-quotes/
