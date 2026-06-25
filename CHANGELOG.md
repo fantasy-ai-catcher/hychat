@@ -9,9 +9,12 @@ All notable changes to HyChat are recorded here. The format loosely follows
 ## [Unreleased]
 
 ### Added
-- Reply to a message: double-click it in the chat to start a reply (a banner
-  shows what you're replying to; Esc cancels). The reply shows a dim
-  `name: snippet` quote above it for everyone.
+- Reply to a message: double-click it in the chat to reply (a banner shows what
+  you're replying to and the composer is prefilled with `@them`; Esc cancels).
+  The reply shows a quoted line above it — a `▎` bar in the replier's color, with
+  the quoted text dim — so everyone sees the context.
+- The @mention picker now filters as you type: after `@`, keep typing to narrow
+  the member list by name prefix.
 
 ### Changed
 - @mentions look cleaner: mentioning someone else is just colored text, and a
