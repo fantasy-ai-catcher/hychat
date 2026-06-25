@@ -49,6 +49,21 @@ describe('buildRenderLines', () => {
     const lines = buildRenderLines([text('1', 'hi')], 80, true);
     expect(lines[0].timestamp).toMatch(/\d\d:\d\d $/);
   });
+
+  it('attaches mention spans and flags messages that mention me', () => {
+    const lines = buildRenderLines([text('1', 'hey @alice ok')], 80, false, {
+      memberNames: ['alice'],
+      selfName: 'alice'
+    });
+    expect(lines[0].mentions).toEqual([{ start: 4, end: 10, name: 'alice' }]);
+    expect(lines[0].mentionsMe).toBe(true);
+  });
+
+  it('leaves mentions undefined and mentionsMe false without a mention context', () => {
+    const lines = buildRenderLines([text('1', 'hey @alice')], 80, false);
+    expect(lines[0].mentions).toBeUndefined();
+    expect(lines[0].mentionsMe).toBe(false);
+  });
 });
 
 describe('sliceWindow', () => {
