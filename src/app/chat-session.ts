@@ -80,6 +80,7 @@ type ChatServiceLike = {
   listWatchlist: (roomId: string) => Promise<WatchlistRow[]>;
   addWatchSymbol: (input: { roomId: string; symbol: string; addedBy: string }) => Promise<void>;
   removeWatchSymbol: (roomId: string, symbol: string) => Promise<void>;
+  reorderWatchlist?: (roomId: string, orderedSymbols: string[]) => Promise<void>;
   getQuotes: (symbols: string[], force: boolean) => Promise<unknown>;
   // Heartbeats keep the room "present" so the server-side scheduled refresh
   // knows to fetch its watchlist. Optional so tests can omit it.
@@ -124,6 +125,8 @@ export type ChatSessionSnapshot = {
   isBusy: boolean;
   helpLines: string[];
   shouldExit: boolean;
+  colorPickerOpen: boolean;
+  watchReorderOpen: boolean;
 };
 
 export type CreateChatSessionOptions = {
@@ -312,6 +315,7 @@ export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
       return 'Saving color…';
     case 'color-show':
     case 'color-list':
+    case 'watch-reorder':
     case 'help':
     case 'quit':
       return null;
@@ -328,6 +332,8 @@ export function createChatSession(options: CreateChatSessionOptions) {
   let statusText = signedOutStatus;
   let isBusy = false;
   let shouldExit = false;
+  let colorPickerOpen = false;
+  let watchReorderOpen = false;
   let subscription: RoomSubscription | undefined;
   let pendingAuth: { email: string; inviteCode?: string } | null = null;
   let verifiedEmail: string | null = null;
@@ -372,7 +378,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
   }
 
   function snapshot(): ChatSessionSnapshot {
-    return { state, user, statusText, isBusy, helpLines, shouldExit };
+    return {
+      state,
+      user,
+      statusText,
+      isBusy,
+      helpLines,
+      shouldExit,
+      colorPickerOpen,
+      watchReorderOpen
+    };
   }
 
   function emitSnapshotChange(): void {
@@ -629,6 +644,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
     return user;
   }
 
+  // Persist a profile color, reflect it in the member panel immediately, and
+  // report the result. Shared by `/color set` and the picker's pickColor.
+  async function applyColor(name: string): Promise<{ ok: boolean }> {
+    if (!isProfileColorName(name)) {
+      return { ok: false };
+    }
+    user = await options.service.updateProfileColor(name);
+    apply({ type: 'member-color-changed', userId: user.id, color: user.displayColor });
+    return { ok: true };
+  }
+
   function requireActiveRoom(): string {
     if (!state.activeRoomId) {
       throw new Error('Join a room first with /join or create one with /create.');
@@ -843,6 +869,18 @@ export function createChatSession(options: CreateChatSessionOptions) {
         return;
       }
 
+      case 'watch-reorder': {
+        requireUser();
+        const roomId = requireActiveRoom();
+        const symbols = state.watchlistByRoom[roomId] ?? [];
+        if (symbols.length < 2) {
+          statusText = 'Add at least two stocks before reordering.';
+          return;
+        }
+        watchReorderOpen = true;
+        return;
+      }
+
       case 'stock': {
         // Stocks are a shared, in-room feature. Look the quote up first so a
         // typo isn't pinned to everyone's panel, then add it to the room
@@ -892,21 +930,17 @@ export function createChatSession(options: CreateChatSessionOptions) {
 
       case 'color-list':
         requireUser();
-        statusText = formatProfileColorList();
+        colorPickerOpen = true;
         return;
 
       case 'color-set': {
         requireUser();
-        if (!isProfileColorName(command.color)) {
+        const result = await applyColor(command.color);
+        if (!result.ok) {
           statusText = `Unknown color: ${command.color}\n${formatProfileColorList()}`;
           return;
         }
-
-        user = await options.service.updateProfileColor(command.color);
-        // Reflect the new color in the member panel right away, without waiting
-        // for our next message to carry the snapshot.
-        apply({ type: 'member-color-changed', userId: user.id, color: user.displayColor });
-        statusText = `Color set to ${user.displayColor}.`;
+        statusText = `Color set to ${user?.displayColor}.`;
         return;
       }
 
@@ -953,6 +987,36 @@ export function createChatSession(options: CreateChatSessionOptions) {
     notifyFocus(focused: boolean): void {
       currentFocus = focused ? 'active' : 'online';
       subscription?.sendFocus?.(focused);
+    },
+
+    // Apply a color chosen in the interactive picker, then close it.
+    async pickColor(name: string): Promise<void> {
+      await applyColor(name);
+      colorPickerOpen = false;
+      emitSnapshotChange();
+    },
+
+    // Dismiss the interactive picker without changing the color.
+    closeColorPicker(): void {
+      colorPickerOpen = false;
+      emitSnapshotChange();
+    },
+
+    // Persist a new watchlist order chosen in the reorder panel, then close it.
+    async reorderWatchlist(orderedSymbols: string[]): Promise<void> {
+      const roomId = state.activeRoomId;
+      if (roomId && options.service.reorderWatchlist) {
+        await options.service.reorderWatchlist(roomId, orderedSymbols);
+        await loadRoomSnapshot(roomId);
+      }
+      watchReorderOpen = false;
+      emitSnapshotChange();
+    },
+
+    // Dismiss the reorder panel without persisting any change.
+    closeWatchReorder(): void {
+      watchReorderOpen = false;
+      emitSnapshotChange();
     },
 
     async handleLine(line: string): Promise<ChatSessionSnapshot> {

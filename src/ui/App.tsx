@@ -7,7 +7,7 @@ import {
   type ChatSessionSnapshot,
   type CreateChatSessionOptions
 } from '../app/chat-session.js';
-import { resolveProfileColor } from '../app/profile-colors.js';
+import { DEFAULT_PROFILE_COLOR, resolveProfileColor } from '../app/profile-colors.js';
 import {
   buildWatchlistTable,
   type WatchlistDirection,
@@ -35,6 +35,15 @@ import {
   mergeChatTimeline,
   resolveShellView
 } from './state.js';
+import {
+  colorPickerColumns,
+  colorPickerHeight,
+  movePickerSelection,
+  pickerColorNames,
+  pickerGridRows,
+  type PickerDirection
+} from './color-picker.js';
+import { moveItem, type ReorderDirection } from './reorder.js';
 import { buildRenderLines, sliceWindow } from './scroll.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
 import { isMouseSequence, watchTerminalMouse } from './terminal-mouse.js';
@@ -57,7 +66,9 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
       'Use /start <email> to log in, or /start <email> <invite-code> to register.',
     isBusy: false,
     helpLines: [],
-    shouldExit: false
+    shouldExit: false,
+    colorPickerOpen: false,
+    watchReorderOpen: false
   };
 }
 
@@ -129,6 +140,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const [showPanel, setShowPanel] = useState(true);
   // Rows scrolled up from the latest message (0 == pinned to the bottom).
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [pickerIndex, setPickerIndex] = useState(0);
 
   // AppShell knows the real wrapped-line count, so it writes the scroll ceiling
   // here during render; the handlers clamp against it so we never scroll past
@@ -174,6 +186,31 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
     };
   }, [snapshot.isBusy]);
 
+  const colorPickerOpen = snapshot.colorPickerOpen;
+  useEffect(() => {
+    if (colorPickerOpen) {
+      const names = pickerColorNames();
+      const currentName = snapshot.user?.displayColor ?? DEFAULT_PROFILE_COLOR;
+      const found = names.indexOf(currentName);
+      setPickerIndex(found >= 0 ? found : 0);
+    }
+  }, [colorPickerOpen, snapshot.user?.displayColor]);
+
+  // Watchlist reorder mode: snapshot the current order into local state when it
+  // opens, then mutate that working copy until the user saves (Enter) or cancels.
+  const [reorderItems, setReorderItems] = useState<WatchlistQuote[]>([]);
+  const [reorderIndex, setReorderIndex] = useState(0);
+  const [reorderGrabbed, setReorderGrabbed] = useState(false);
+  const watchReorderOpen = snapshot.watchReorderOpen;
+  useEffect(() => {
+    if (watchReorderOpen) {
+      const roomId = (fixedState ?? snapshot.state).activeRoomId;
+      setReorderItems(selectWatchlistQuotes(snapshot.state, roomId));
+      setReorderIndex(0);
+      setReorderGrabbed(false);
+    }
+  }, [watchReorderOpen, fixedState, snapshot.state]);
+
   async function submitLine(line: string): Promise<void> {
     if (!session) {
       return;
@@ -190,6 +227,71 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   }
 
   useInput((value, key) => {
+    if (snapshot.colorPickerOpen) {
+      if (key.ctrl && value === 'c') {
+        exit();
+        return;
+      }
+      if (key.escape) {
+        session?.closeColorPicker();
+        return;
+      }
+      if (key.return) {
+        const names = pickerColorNames();
+        void session?.pickColor(names[pickerIndex] ?? DEFAULT_PROFILE_COLOR);
+        return;
+      }
+      const direction: PickerDirection | undefined = key.upArrow
+        ? 'up'
+        : key.downArrow
+          ? 'down'
+          : key.leftArrow
+            ? 'left'
+            : key.rightArrow
+              ? 'right'
+              : undefined;
+      if (direction) {
+        const count = pickerColorNames().length;
+        const columns = colorPickerColumns(process.stdout.columns ?? 80);
+        setPickerIndex((current) => movePickerSelection(current, direction, count, columns));
+      }
+      return; // picker swallows all other keys
+    }
+
+    if (snapshot.watchReorderOpen) {
+      if (key.ctrl && value === 'c') {
+        exit();
+        return;
+      }
+      if (key.escape) {
+        session?.closeWatchReorder();
+        return;
+      }
+      if (key.return) {
+        void session?.reorderWatchlist(reorderItems.map((item) => item.symbol));
+        return;
+      }
+      if (value === ' ') {
+        setReorderGrabbed((grabbed) => !grabbed);
+        return;
+      }
+      const reorderDir: ReorderDirection | undefined = key.upArrow
+        ? 'up'
+        : key.downArrow
+          ? 'down'
+          : undefined;
+      if (reorderDir) {
+        const count = reorderItems.length;
+        if (reorderGrabbed) {
+          setReorderItems((items) => moveItem(items, reorderIndex, reorderDir));
+        }
+        setReorderIndex((current) =>
+          reorderDir === 'up' ? Math.max(0, current - 1) : Math.min(count - 1, current + 1)
+        );
+      }
+      return; // reorder swallows all other keys
+    }
+
     if (key.ctrl && value === 'c') {
       exit();
       return;
@@ -291,6 +393,13 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       maxOffsetRef={maxOffsetRef}
       height={terminalRows}
       width={terminalColumns}
+      colorPickerOpen={snapshot.colorPickerOpen}
+      pickerIndex={pickerIndex}
+      pickerCurrentColor={snapshot.user?.displayColor}
+      watchReorderOpen={snapshot.watchReorderOpen}
+      reorderItems={reorderItems}
+      reorderIndex={reorderIndex}
+      reorderGrabbed={reorderGrabbed}
     />
   );
 }
@@ -316,6 +425,16 @@ type AppShellProps = {
   maxOffsetRef?: { current: number };
   height?: number;
   width?: number;
+  // The color picker pops up above the input composer when open; the chat
+  // shrinks by the picker's height to make room.
+  colorPickerOpen?: boolean;
+  pickerIndex?: number;
+  pickerCurrentColor?: string;
+  // The watchlist reorder panel pops up above the input composer when open.
+  watchReorderOpen?: boolean;
+  reorderItems?: WatchlistQuote[];
+  reorderIndex?: number;
+  reorderGrabbed?: boolean;
 };
 
 export function AppShell({
@@ -337,7 +456,14 @@ export function AppShell({
   scrollOffset = 0,
   maxOffsetRef,
   height,
-  width
+  width,
+  colorPickerOpen = false,
+  pickerIndex = 0,
+  pickerCurrentColor,
+  watchReorderOpen = false,
+  reorderItems = [],
+  reorderIndex = 0,
+  reorderGrabbed = false
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
@@ -355,7 +481,13 @@ export function AppShell({
   // The composer is 2 border rows plus one row per input line, so multiline
   // input grows the bottom region (and shrinks the chat) instead of overflowing.
   const inputLines = input.split('\n').length;
-  const bottomHeight = statusHeight + 3 + inputLines;
+  // The color picker pops up just above the input composer; reserve its height
+  // in the bottom region so the chat shrinks rather than overflowing.
+  const pickerHeight = colorPickerOpen ? colorPickerHeight(terminalWidth) : 0;
+  // The reorder panel is a vertical list: one row per stock plus 4 rows of
+  // chrome (top+bottom border, title, hint).
+  const reorderHeight = watchReorderOpen ? reorderItems.length + 4 : 0;
+  const bottomHeight = statusHeight + 3 + inputLines + pickerHeight + reorderHeight;
   const chatHeight = Math.max(shellHeight - topHeight - bottomHeight, 4);
 
   // The chat scrolls by pre-wrapped line, so the ceiling depends on the real
@@ -369,12 +501,15 @@ export function AppShell({
   }
 
   if (resolveShellView(state) === 'welcome') {
-    const welcomeHeight = Math.max(shellHeight - statusHeight - 2 - inputLines, 4);
+    const welcomeHeight = Math.max(shellHeight - statusHeight - 2 - inputLines - pickerHeight, 4);
 
     return (
       <Box flexDirection="column" height={shellHeight}>
         {WelcomeScreen({ userLabel, height: welcomeHeight })}
         <Box flexDirection="column" flexShrink={0}>
+          {colorPickerOpen ? (
+            <ColorPicker index={pickerIndex} terminalWidth={terminalWidth} currentColor={pickerCurrentColor} />
+          ) : null}
           <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
           <InputComposer
             promptLabel={promptLabel}
@@ -408,6 +543,12 @@ export function AppShell({
         showTimestamps
       })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
+        {colorPickerOpen ? (
+          <ColorPicker index={pickerIndex} terminalWidth={terminalWidth} currentColor={pickerCurrentColor} />
+        ) : null}
+        {watchReorderOpen ? (
+          <WatchReorder items={reorderItems} index={reorderIndex} grabbed={reorderGrabbed} />
+        ) : null}
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
         <InputComposer
           promptLabel={promptLabel}
@@ -555,6 +696,83 @@ function memberDot(status: MemberView['status']): string {
 
 // Cap a single member cell so one long name can't stretch the whole grid.
 const maxMemberCellWidth = 24;
+
+export type ColorPickerProps = {
+  index: number;
+  terminalWidth?: number;
+  currentColor?: string;
+};
+
+export function ColorPicker({
+  index,
+  terminalWidth = process.stdout.columns ?? 80,
+  currentColor
+}: ColorPickerProps) {
+  const names = pickerColorNames();
+  const columns = colorPickerColumns(terminalWidth);
+  const rows = pickerGridRows(
+    names.map((name, cellIndex) => ({ name, cellIndex })),
+    columns
+  );
+
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+      <Text bold>Pick a color</Text>
+      <Text dimColor>↑↓←→ to move · Enter to select · Esc to cancel</Text>
+      {rows.map((row, rowIndex) => (
+        <Box key={rowIndex}>
+          {row.map((cell) => {
+            const selected = cell.cellIndex === index;
+            const isDefault = cell.name === DEFAULT_PROFILE_COLOR;
+            const label = isDefault ? 'default' : cell.name;
+            const current = cell.name === currentColor ? '*' : ' ';
+            return (
+              <Box key={cell.name} width={12} flexShrink={0}>
+                <Text
+                  color={isDefault ? undefined : resolveProfileColor(cell.name)}
+                  inverse={selected}
+                  bold={selected}
+                >
+                  {selected ? '▸' : ' '}
+                  {current}
+                  {label}
+                </Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+export type WatchReorderProps = {
+  items: WatchlistQuote[];
+  index: number;
+  grabbed: boolean;
+};
+
+export function WatchReorder({ items, index, grabbed }: WatchReorderProps) {
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
+      <Text bold>Reorder watchlist</Text>
+      <Text dimColor>↑↓ move · Space grab/drop · Enter save · Esc cancel</Text>
+      {items.map((item, rowIndex) => {
+        const selected = rowIndex === index;
+        const isGrabbed = selected && grabbed;
+        const marker = isGrabbed ? '»' : selected ? '▸' : ' ';
+        const label = item.name?.trim() || item.symbol;
+        return (
+          <Box key={item.symbol}>
+            <Text inverse={selected} bold={selected} color={isGrabbed ? 'cyanBright' : undefined}>
+              {marker} {label}  {item.symbol}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
 
 export function TopInfoPanel({
   state,

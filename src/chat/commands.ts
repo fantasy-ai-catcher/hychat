@@ -16,6 +16,7 @@ export type ParsedChatInput =
   | MembersCommand
   | WatchAddCommand
   | WatchRemoveCommand
+  | WatchReorderCommand
   | StockCommand
   | RefreshCommand
   | ColorShowCommand
@@ -43,6 +44,7 @@ type InviteCodeRevokeCommand = { type: 'command'; name: 'invite-code-revoke'; co
 type MembersCommand = { type: 'command'; name: 'members' };
 type WatchAddCommand = { type: 'command'; name: 'watch-add'; symbol: string };
 type WatchRemoveCommand = { type: 'command'; name: 'watch-remove'; symbol: string };
+type WatchReorderCommand = { type: 'command'; name: 'watch-reorder' };
 type StockCommand = { type: 'command'; name: 'stock'; symbol: string };
 type RefreshCommand = { type: 'command'; name: 'refresh'; symbol?: string };
 type ColorShowCommand = { type: 'command'; name: 'color-show' };
@@ -177,7 +179,11 @@ function parseWatchCommand(args: string[]): ParsedChatInput {
     }));
   }
 
-  return { type: 'error', message: 'Usage: /watch <add|remove> <symbol>' };
+  if (action === 'reorder' && !symbol) {
+    return { type: 'command', name: 'watch-reorder' };
+  }
+
+  return { type: 'error', message: 'Usage: /watch <add|remove> <symbol> | reorder' };
 }
 
 function parseInviteCodeCommand(args: string[]): ParsedChatInput {

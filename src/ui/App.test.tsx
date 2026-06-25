@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
   App,
   AppShell,
+  ColorPicker,
+  WatchReorder,
   InputComposer,
   isPanelToggle,
   MessageViewport,
@@ -262,8 +264,8 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
-          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'moss', role: 'member' }
         ]
       },
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
@@ -309,8 +311,8 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
-          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'moss', role: 'member' }
         ]
       },
       onlineByRoom: { 'room-1': ['user-1', 'user-2', 'user-3'] },
@@ -351,7 +353,7 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' }
         ]
       },
       onlineByRoom: { 'room-1': ['user-1'] },
@@ -388,10 +390,10 @@ describe('App', () => {
       membersByRoom: {
         'room-1': [
           { roomId: 'room-1', userId: 'user-1', displayName: 'liudong', displayColor: 'rose', role: 'owner' },
-          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'cyan', role: 'member' },
-          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'green', role: 'member' },
-          { roomId: 'room-1', userId: 'user-4', displayName: 'carol', displayColor: 'amber', role: 'member' },
-          { roomId: 'room-1', userId: 'user-5', displayName: 'dave', displayColor: 'blue', role: 'member' }
+          { roomId: 'room-1', userId: 'user-2', displayName: 'alice', displayColor: 'teal', role: 'member' },
+          { roomId: 'room-1', userId: 'user-3', displayName: 'bob', displayColor: 'moss', role: 'member' },
+          { roomId: 'room-1', userId: 'user-4', displayName: 'carol', displayColor: 'sand', role: 'member' },
+          { roomId: 'room-1', userId: 'user-5', displayName: 'dave', displayColor: 'steel', role: 'member' }
         ]
       },
       onlineByRoom: {
@@ -527,6 +529,32 @@ describe('App', () => {
 
     expect(text).toContain('腾讯控股');
     // The code now shows as its own dim column alongside the shortname.
+    expect(text).toContain('0700.HK');
+  });
+
+  it('renders every pickable color name in the picker', () => {
+    const text = collectText(
+      ColorPicker({ index: 0, terminalWidth: 100, currentColor: 'white' })
+    );
+    expect(text).toContain('default'); // the leading default cell
+    expect(text).toContain('sage');
+    expect(text).toContain('gray');
+  });
+
+  it('lists every watched stock in the reorder panel', () => {
+    const text = collectText(
+      WatchReorder({
+        items: [
+          { symbol: 'AAPL.US', name: 'Apple Inc.' },
+          { symbol: '0700.HK', name: '腾讯控股' }
+        ],
+        index: 0,
+        grabbed: false
+      })
+    );
+    expect(text).toContain('Apple Inc.');
+    expect(text).toContain('AAPL.US');
+    expect(text).toContain('腾讯控股');
     expect(text).toContain('0700.HK');
   });
 
@@ -705,7 +733,7 @@ describe('MessageViewport system messages', () => {
     roomId: 'room-1',
     senderId: 'user-2',
     senderName: 'alice',
-    senderColor: 'cyan',
+    senderColor: 'teal',
     kind: 'system' as const,
     body: 'added AAPL.US',
     metadata: { event: 'watch_add', symbol: 'AAPL.US' },

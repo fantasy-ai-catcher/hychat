@@ -22,7 +22,11 @@ src/
 ├── app/
 │   ├── chat-session.ts       [L1] session orchestration: login/verify flow, command
 │   │                         handling, pending-status + help text, service interface;
-│   │                         presence heartbeat timer (touchPresence while in a room)
+│   │                         presence heartbeat timer (touchPresence while in a room);
+│   │                         colorPickerOpen state + pickColor/closeColorPicker methods
+│   │                         (/color list opens the picker);
+│   │                         watchReorderOpen state + reorderWatchlist/closeWatchReorder
+│   │                         (/watch reorder opens the reorder panel)
 │   ├── hychat-service.ts     [L3] all Supabase calls: auth/OTP, ensureProfile/setDisplayName,
 │   │                         rooms (listRoomsWithCounts/createRoom/joinRoom/leaveRoom), messages,
 │   │                         members, invite codes, quotes, touchPresence (heartbeat_presence RPC)
@@ -31,17 +35,26 @@ src/
 │   │                         upgrade hychat` when outdated or check fails
 │   │                         (HYCHAT_SKIP_UPDATE_CHECK bypass; runUpdateGate is the shell)
 │   ├── session-storage.ts    local session file persistence + --profile paths
-│   ├── profile-colors.ts     [L1] color palette + helpers
+│   ├── profile-colors.ts     [L1] muted color palette + helpers
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
 ├── ui/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText;
 │   │                         TopInfoPanel header (members grid + stocks table w/ symbol column);
+│   │                         ColorPicker overlay (opened by `/color list`; arrow keys move, Enter
+│   │                         selects, Esc cancels); WatchReorder overlay (opened by `/watch reorder`;
+│   │                         ↑↓ move, Space grab/drop, Enter save, Esc cancel) — both pop up above
+│   │                         the input box;
 │   │                         MessageViewport pre-wraps + windows scrollback (buildRenderLines/
 │   │                         sliceWindow); mouse wheel + PageUp/PageDown scroll, Enter jumps to latest;
 │   │                         Ctrl+T toggles timestamps, Ctrl+S toggles the whole top panel (isPanelToggle);
 │   │                         resolveEditorAction maps keypresses -> editor actions
 │   ├── scroll.ts             [L1] chat scrollback math: buildRenderLines (flatten messages to one
 │   │                         CJK-aware wrapped row each) + sliceWindow (visible slice by scroll offset)
+│   ├── color-picker.ts       [L1] pure color-picker grid logic: pickerColorNames +
+│   │                         colorPickerColumns + movePickerSelection (arrow-key grid nav, clamped) +
+│   │                         pickerGridRows
+│   ├── reorder.ts            [L1] pure moveItem(list,index,up|down) — clamped swap for the
+│   │                         watchlist reorder panel
 │   ├── terminal-mouse.ts     [L1/L2] xterm mouse reporting (DECSET 1000/1006): enable/parse SGR wheel
 │   │                         events (button 64/65) so the wheel scrolls chat; isMouseSequence drops bytes
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
@@ -84,6 +97,10 @@ supabase/
 │                             room_presence + heartbeat_presence / active_rooms_with_symbols RPCs,
 │                             yahoo_auth crumb cache, watchlist cap trigger, pg_cron 10s refresh job
 │                             (cron skips invoking the edge function when no room is active);
+│                             profiles/messages display_color CHECK + update_profile_color RPC
+│                             validate the muted palette (must match src/app/profile-colors.ts);
+│                             room_watchlist.sort_order + reorder_watchlist RPC (member-gated)
+│                             back the shared manual watchlist order;
 │                             newest migration is the source of truth
 └── functions/
     ├── get-stock-quotes/
