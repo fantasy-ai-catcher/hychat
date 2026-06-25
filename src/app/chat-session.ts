@@ -76,6 +76,7 @@ type ChatServiceLike = {
     roomId: string;
     senderId: string;
     body: string;
+    metadata?: Record<string, unknown>;
   }) => Promise<ChatMessageRow | void>;
   listWatchlist: (roomId: string) => Promise<WatchlistRow[]>;
   addWatchSymbol: (input: { roomId: string; symbol: string; addedBy: string }) => Promise<void>;
@@ -116,6 +117,14 @@ type RealtimeLike = {
       onStatus?: (status: string) => void;
     }
   ) => RoomSubscription;
+};
+
+// Passed to handleLine when the user is replying to a message; persisted as the
+// new message's metadata so every client can render the quoted parent.
+export type ReplyMetadata = {
+  replyTo: string;
+  replyToName: string;
+  replyToSnippet: string;
 };
 
 export type ChatSessionSnapshot = {
@@ -1019,7 +1028,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
       emitSnapshotChange();
     },
 
-    async handleLine(line: string): Promise<ChatSessionSnapshot> {
+    async handleLine(line: string, reply?: ReplyMetadata): Promise<ChatSessionSnapshot> {
       const parsed = parseChatInput(line);
       const pendingStatusText = buildPendingStatusText(parsed);
       if (pendingStatusText) {
@@ -1044,7 +1053,14 @@ export function createChatSession(options: CreateChatSessionOptions) {
           const sentMessage = await options.service.sendTextMessage({
             roomId,
             senderId: currentUser.id,
-            body: parsed.body
+            body: parsed.body,
+            metadata: reply
+              ? {
+                  replyTo: reply.replyTo,
+                  replyToName: reply.replyToName,
+                  replyToSnippet: reply.replyToSnippet
+                }
+              : undefined
           });
           if (sentMessage) {
             apply({ type: 'message-received', message: toChatMessage(sentMessage) });

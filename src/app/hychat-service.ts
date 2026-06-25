@@ -61,6 +61,7 @@ export type SendTextMessageInput = {
   roomId: string;
   senderId: string;
   body: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type AddWatchSymbolInput = {
@@ -277,7 +278,7 @@ export function createHychatService(supabase: SupabaseLikeClient) {
           sender_id: input.senderId,
           kind: 'text',
           body: input.body,
-          metadata: {}
+          metadata: input.metadata ?? {}
         })
         .select('id,room_id,sender_id,sender_display_name,sender_display_color,kind,body,metadata,created_at');
       const selected = typeof result.single === 'function' ? result.single() : result;
