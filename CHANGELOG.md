@@ -8,6 +8,11 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- `/watch reorder` opens an interactive panel above the input box to reorder the
+  room's stock watchlist: `↑↓` to move, `Space` to grab/drop a stock, `Enter` to
+  save, `Esc` to cancel. The order is shared with everyone in the room.
+
 ### Changed
 - Profile colors are now a muted palette instead of the old vivid one. `/color
   list` is an interactive picker — move with the arrow keys, Enter to select,

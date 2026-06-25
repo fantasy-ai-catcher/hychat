@@ -24,7 +24,9 @@ src/
 │   │                         handling, pending-status + help text, service interface;
 │   │                         presence heartbeat timer (touchPresence while in a room);
 │   │                         colorPickerOpen state + pickColor/closeColorPicker methods
-│   │                         (/color list opens the picker)
+│   │                         (/color list opens the picker);
+│   │                         watchReorderOpen state + reorderWatchlist/closeWatchReorder
+│   │                         (/watch reorder opens the reorder panel)
 │   ├── hychat-service.ts     [L3] all Supabase calls: auth/OTP, ensureProfile/setDisplayName,
 │   │                         rooms (listRoomsWithCounts/createRoom/joinRoom/leaveRoom), messages,
 │   │                         members, invite codes, quotes, touchPresence (heartbeat_presence RPC)
@@ -39,7 +41,9 @@ src/
 │   ├── App.tsx               [L2] Ink render: App / AppShell / InputComposer / StatusText;
 │   │                         TopInfoPanel header (members grid + stocks table w/ symbol column);
 │   │                         ColorPicker overlay (opened by `/color list`; arrow keys move, Enter
-│   │                         selects, Esc cancels);
+│   │                         selects, Esc cancels); WatchReorder overlay (opened by `/watch reorder`;
+│   │                         ↑↓ move, Space grab/drop, Enter save, Esc cancel) — both pop up above
+│   │                         the input box;
 │   │                         MessageViewport pre-wraps + windows scrollback (buildRenderLines/
 │   │                         sliceWindow); mouse wheel + PageUp/PageDown scroll, Enter jumps to latest;
 │   │                         Ctrl+T toggles timestamps, Ctrl+S toggles the whole top panel (isPanelToggle);
@@ -49,6 +53,8 @@ src/
 │   ├── color-picker.ts       [L1] pure color-picker grid logic: pickerColorNames +
 │   │                         colorPickerColumns + movePickerSelection (arrow-key grid nav, clamped) +
 │   │                         pickerGridRows
+│   ├── reorder.ts            [L1] pure moveItem(list,index,up|down) — clamped swap for the
+│   │                         watchlist reorder panel
 │   ├── terminal-mouse.ts     [L1/L2] xterm mouse reporting (DECSET 1000/1006): enable/parse SGR wheel
 │   │                         events (button 64/65) so the wheel scrolls chat; isMouseSequence drops bytes
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
@@ -93,6 +99,8 @@ supabase/
 │                             (cron skips invoking the edge function when no room is active);
 │                             profiles/messages display_color CHECK + update_profile_color RPC
 │                             validate the muted palette (must match src/app/profile-colors.ts);
+│                             room_watchlist.sort_order + reorder_watchlist RPC (member-gated)
+│                             back the shared manual watchlist order;
 │                             newest migration is the source of truth
 └── functions/
     ├── get-stock-quotes/
