@@ -64,7 +64,7 @@ describe('buildRenderLines', () => {
     expect(lines[0].mentions).toBeUndefined();
   });
 
-  it('emits a colored, dim reply-quote row; the body stays at the margin', () => {
+  it('runs a colored bar down both the quote row and the body of a reply', () => {
     const reply = {
       ...text('2', 'agreed'),
       senderColor: 'sage',
@@ -75,10 +75,24 @@ describe('buildRenderLines', () => {
       kind: 'reply',
       messageId: '2',
       senderColor: 'sage',
+      replyBar: true,
       replyQuote: { name: 'alice', snippet: 'buy maotai' }
     });
-    // Body row is a normal text row (no special bar flag).
-    expect(lines[1]).toMatchObject({ kind: 'text', body: 'agreed', messageId: '2' });
+    expect(lines[1]).toMatchObject({
+      kind: 'text',
+      body: 'agreed',
+      messageId: '2',
+      senderColor: 'sage',
+      replyBar: true
+    });
+  });
+
+  it('reserves the reply bar width in the body wrap budget', () => {
+    const plain = { ...text('1', 'x'.repeat(20)), senderName: 'a', senderId: 'a' };
+    const reply = { ...plain, metadata: { replyTo: '0', replyToName: 'a', replyToSnippet: 's' } };
+    const plainRows = buildRenderLines([plain], 6, false).filter((l) => l.kind === 'text');
+    const replyRows = buildRenderLines([reply], 6, false).filter((l) => l.kind === 'text');
+    expect(replyRows.length).toBeGreaterThan(plainRows.length);
   });
 });
 

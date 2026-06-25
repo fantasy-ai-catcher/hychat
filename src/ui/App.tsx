@@ -1162,9 +1162,10 @@ export function MessageViewport({
               </Text>
             </Box>
           ) : line.kind === 'reply' ? (
-            // Quote row of a reply: a "▎" bar in the replier's profile color
-            // (so stacked replies don't blur into one gray bar), then the quote
-            // text indented + dim (no `name:` colon, so it isn't a re-sent line).
+            // Quote row of a reply: a "▎ " bar in the replier's profile color
+            // (so stacked replies don't blur into one gray bar), then the dim
+            // quote text right after it (no `name:` colon, so it isn't a re-sent
+            // line). The body row below shares the same bar.
             <Box key={index} flexDirection="row">
               <Text color={resolveProfileColor(line.senderColor)}>▎ </Text>
               <Text dimColor>
@@ -1173,6 +1174,10 @@ export function MessageViewport({
             </Box>
           ) : (
             <Box key={index} flexDirection="row">
+              {/* Reply body rows share the same colored "▎ " bar; text right after. */}
+              {line.replyBar ? (
+                <Text color={resolveProfileColor(line.senderColor)}>▎ </Text>
+              ) : null}
               {line.timestamp ? (
                 <Text color="gray" dimColor>
                   {line.timestamp}

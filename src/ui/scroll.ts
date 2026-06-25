@@ -31,6 +31,9 @@ export type RenderLine = {
   // above the reply body. `senderColor` colors the `▎` bar with the replier's
   // profile color so consecutive replies don't blur into one gray bar.
   replyQuote?: { name: string; snippet: string };
+  // True on every row of a reply (quote + body) so the same colored "▎ " bar
+  // runs down the whole block; text sits right after the bar, no extra indent.
+  replyBar?: boolean;
 };
 
 // Pull the quoted-reply preview a message carries in its metadata, if any.
@@ -99,23 +102,25 @@ export function buildRenderLines(
       continue;
     }
 
-    // A reply shows a "▎ " quote row above its body: the bar is colored with the
-    // replier's profile color, the quote text is indented and dim. The body row
-    // stays at the normal left margin (no bar, no indent).
+    // A reply renders a colored "▎ " bar (the replier's profile color) down its
+    // whole block — the quote row and every body row. Text sits right after the
+    // bar with no extra indent; the quote is dim, the body is normal.
     const quote = replyQuoteOf(message);
+    const barWidth = quote ? 2 : 0; // "▎ "
     if (quote) {
       lines.push({
         kind: 'reply',
         replyQuote: quote,
         senderColor: message.senderColor,
-        messageId: message.id
+        messageId: message.id,
+        replyBar: true
       });
     }
 
     const senderLabel = `${message.senderName ?? message.senderId}:`;
-    // First row budget is reduced by the timestamp + "label " prefix.
+    // First row budget is reduced by the timestamp + "label " prefix and the bar.
     const prefixWidth = tsWidth + stringWidth(senderLabel) + 1;
-    const rows = wrapByWidth(message.body, width - prefixWidth, width);
+    const rows = wrapByWidth(message.body, width - prefixWidth - barWidth, width - barWidth);
     rows.forEach((row, index) => {
       const mentions =
         memberNames.length > 0 ? findMentionSpans(row, memberNames) : undefined;
@@ -129,9 +134,17 @@ export function buildRenderLines(
               senderColor: message.senderColor,
               timestamp: tsPrefix || undefined,
               mentions: spans,
-              messageId: message.id
+              messageId: message.id,
+              replyBar: quote ? true : undefined
             }
-          : { kind: 'text', body: row, mentions: spans, messageId: message.id }
+          : {
+              kind: 'text',
+              body: row,
+              mentions: spans,
+              messageId: message.id,
+              senderColor: quote ? message.senderColor : undefined,
+              replyBar: quote ? true : undefined
+            }
       );
     });
   }
