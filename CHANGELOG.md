@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-25
+
 ### Added
 - Reply to a message: double-click it in the chat to reply (a banner shows what
   you're replying to and the composer is prefilled with `@them`; Esc cancels).
