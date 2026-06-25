@@ -30,6 +30,9 @@ export type RenderLine = {
   // For a `kind: 'reply'` row: the quoted parent (sender + snippet) shown dim
   // above the reply body.
   replyQuote?: { name: string; snippet: string };
+  // True on every row of a reply (quote + body) so a continuous "▎ " bar joins
+  // them into one block. (The quote text is indented further; the body is not.)
+  replyBar?: boolean;
 };
 
 // Pull the quoted-reply preview a message carries in its metadata, if any.
@@ -98,18 +101,19 @@ export function buildRenderLines(
       continue;
     }
 
-    // A reply shows a dim, indented "▎ name snippet" quote row above its body.
-    // The body row stays at the normal left margin, so the inset quote is easy
-    // to tell apart from the reply itself.
+    // A reply renders a continuous "▎ " bar down its whole block (quote + body).
+    // The quote text is indented further than the body, so the inset quote is
+    // easy to tell from the reply while the bar groups them as one unit.
     const quote = replyQuoteOf(message);
+    const barWidth = quote ? 2 : 0; // "▎ " on every row
     if (quote) {
-      lines.push({ kind: 'reply', replyQuote: quote, messageId: message.id });
+      lines.push({ kind: 'reply', replyQuote: quote, messageId: message.id, replyBar: true });
     }
 
     const senderLabel = `${message.senderName ?? message.senderId}:`;
-    // First row budget is reduced by the timestamp + "label " prefix.
+    // First row budget is reduced by the timestamp + "label " prefix and the bar.
     const prefixWidth = tsWidth + stringWidth(senderLabel) + 1;
-    const rows = wrapByWidth(message.body, width - prefixWidth, width);
+    const rows = wrapByWidth(message.body, width - prefixWidth - barWidth, width - barWidth);
     rows.forEach((row, index) => {
       const mentions =
         memberNames.length > 0 ? findMentionSpans(row, memberNames) : undefined;
@@ -123,9 +127,10 @@ export function buildRenderLines(
               senderColor: message.senderColor,
               timestamp: tsPrefix || undefined,
               mentions: spans,
-              messageId: message.id
+              messageId: message.id,
+              replyBar: quote ? true : undefined
             }
-          : { kind: 'text', body: row, mentions: spans, messageId: message.id }
+          : { kind: 'text', body: row, mentions: spans, messageId: message.id, replyBar: quote ? true : undefined }
       );
     });
   }
