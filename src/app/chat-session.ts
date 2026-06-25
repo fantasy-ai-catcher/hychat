@@ -80,6 +80,7 @@ type ChatServiceLike = {
   listWatchlist: (roomId: string) => Promise<WatchlistRow[]>;
   addWatchSymbol: (input: { roomId: string; symbol: string; addedBy: string }) => Promise<void>;
   removeWatchSymbol: (roomId: string, symbol: string) => Promise<void>;
+  reorderWatchlist?: (roomId: string, orderedSymbols: string[]) => Promise<void>;
   getQuotes: (symbols: string[], force: boolean) => Promise<unknown>;
   // Heartbeats keep the room "present" so the server-side scheduled refresh
   // knows to fetch its watchlist. Optional so tests can omit it.
@@ -125,6 +126,7 @@ export type ChatSessionSnapshot = {
   helpLines: string[];
   shouldExit: boolean;
   colorPickerOpen: boolean;
+  watchReorderOpen: boolean;
 };
 
 export type CreateChatSessionOptions = {
@@ -313,6 +315,7 @@ export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
       return 'Saving color…';
     case 'color-show':
     case 'color-list':
+    case 'watch-reorder':
     case 'help':
     case 'quit':
       return null;
@@ -330,6 +333,7 @@ export function createChatSession(options: CreateChatSessionOptions) {
   let isBusy = false;
   let shouldExit = false;
   let colorPickerOpen = false;
+  let watchReorderOpen = false;
   let subscription: RoomSubscription | undefined;
   let pendingAuth: { email: string; inviteCode?: string } | null = null;
   let verifiedEmail: string | null = null;
@@ -374,7 +378,16 @@ export function createChatSession(options: CreateChatSessionOptions) {
   }
 
   function snapshot(): ChatSessionSnapshot {
-    return { state, user, statusText, isBusy, helpLines, shouldExit, colorPickerOpen };
+    return {
+      state,
+      user,
+      statusText,
+      isBusy,
+      helpLines,
+      shouldExit,
+      colorPickerOpen,
+      watchReorderOpen
+    };
   }
 
   function emitSnapshotChange(): void {
@@ -856,6 +869,18 @@ export function createChatSession(options: CreateChatSessionOptions) {
         return;
       }
 
+      case 'watch-reorder': {
+        requireUser();
+        const roomId = requireActiveRoom();
+        const symbols = state.watchlistByRoom[roomId] ?? [];
+        if (symbols.length < 2) {
+          statusText = 'Add at least two stocks before reordering.';
+          return;
+        }
+        watchReorderOpen = true;
+        return;
+      }
+
       case 'stock': {
         // Stocks are a shared, in-room feature. Look the quote up first so a
         // typo isn't pinned to everyone's panel, then add it to the room
@@ -974,6 +999,23 @@ export function createChatSession(options: CreateChatSessionOptions) {
     // Dismiss the interactive picker without changing the color.
     closeColorPicker(): void {
       colorPickerOpen = false;
+      emitSnapshotChange();
+    },
+
+    // Persist a new watchlist order chosen in the reorder panel, then close it.
+    async reorderWatchlist(orderedSymbols: string[]): Promise<void> {
+      const roomId = state.activeRoomId;
+      if (roomId && options.service.reorderWatchlist) {
+        await options.service.reorderWatchlist(roomId, orderedSymbols);
+        await loadRoomSnapshot(roomId);
+      }
+      watchReorderOpen = false;
+      emitSnapshotChange();
+    },
+
+    // Dismiss the reorder panel without persisting any change.
+    closeWatchReorder(): void {
+      watchReorderOpen = false;
       emitSnapshotChange();
     },
 

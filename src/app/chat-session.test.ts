@@ -160,6 +160,9 @@ function createService() {
       async removeWatchSymbol(roomId: string, symbol: string) {
         calls.push({ method: 'removeWatchSymbol', args: [roomId, symbol] });
       },
+      async reorderWatchlist(roomId: string, orderedSymbols: string[]) {
+        calls.push({ method: 'reorderWatchlist', args: [roomId, orderedSymbols] });
+      },
       async getQuotes(symbols: string[], force: boolean) {
         calls.push({ method: 'getQuotes', args: [symbols, force] });
         return {
@@ -1214,6 +1217,76 @@ describe('createChatSession', () => {
 
     expect(calls.some((c) => c.method === 'updateProfileColor')).toBe(false);
     expect(latest?.colorPickerOpen).toBe(false);
+  });
+
+  function twoSymbolService() {
+    const base = createService();
+    return {
+      ...base,
+      service: {
+        ...base.service,
+        async listWatchlist(roomId: string) {
+          base.calls.push({ method: 'listWatchlist', args: [roomId] });
+          return [
+            { room_id: roomId, canonical_symbol: 'AAPL.US', added_by: 'user-1', created_at: '2026-06-06T08:00:00.000Z' },
+            { room_id: roomId, canonical_symbol: '0700.HK', added_by: 'user-1', created_at: '2026-06-06T08:01:00.000Z' }
+          ];
+        }
+      }
+    };
+  }
+
+  it('opens the reorder panel on /watch reorder when 2+ stocks are watched', async () => {
+    const { service } = twoSymbolService();
+    const session = createChatSession({ service });
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    const snapshot = await session.handleLine('/watch reorder');
+    expect(snapshot.watchReorderOpen).toBe(true);
+  });
+
+  it('does not open the reorder panel with fewer than two stocks', async () => {
+    const { service } = createService(); // default listWatchlist returns one symbol
+    const session = createChatSession({ service });
+    await signIn(session);
+    await session.handleLine('/join Friends');
+
+    const snapshot = await session.handleLine('/watch reorder');
+    expect(snapshot.watchReorderOpen).toBe(false);
+    expect(snapshot.statusText).toContain('at least two stocks');
+  });
+
+  it('reorderWatchlist persists the new order and closes the panel', async () => {
+    const { service, calls } = twoSymbolService();
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({ service, onSnapshotChange: (s) => { latest = s; } });
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    await session.handleLine('/watch reorder');
+
+    await session.reorderWatchlist(['0700.HK', 'AAPL.US']);
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { method: 'reorderWatchlist', args: ['room-1', ['0700.HK', 'AAPL.US']] }
+      ])
+    );
+    expect(latest?.watchReorderOpen).toBe(false);
+  });
+
+  it('closeWatchReorder closes without persisting', async () => {
+    const { service, calls } = twoSymbolService();
+    let latest: Awaited<ReturnType<typeof session.handleLine>> | undefined;
+    const session = createChatSession({ service, onSnapshotChange: (s) => { latest = s; } });
+    await signIn(session);
+    await session.handleLine('/join Friends');
+    await session.handleLine('/watch reorder');
+
+    session.closeWatchReorder();
+
+    expect(calls.some((c) => c.method === 'reorderWatchlist')).toBe(false);
+    expect(latest?.watchReorderOpen).toBe(false);
   });
 });
 
