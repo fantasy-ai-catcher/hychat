@@ -1160,10 +1160,13 @@ export function MessageViewport({
               </Text>
             </Box>
           ) : line.kind === 'reply' ? (
-            // Dim "name: snippet" quote shown above a reply's body.
+            // Quoted parent shown above a reply: a soft `▎` bar marks it as a
+            // quote, dim text de-emphasizes it (no `name:` colon, so it doesn't
+            // read like a re-sent message).
             <Box key={index} flexDirection="row">
+              <Text color="gray">▎ </Text>
               <Text dimColor>
-                {line.replyQuote?.name}: {line.replyQuote?.snippet}
+                {line.replyQuote?.name} {line.replyQuote?.snippet}
               </Text>
             </Box>
           ) : (

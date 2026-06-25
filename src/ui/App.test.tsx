@@ -561,7 +561,8 @@ describe('App', () => {
         height: 10
       })
     );
-    expect(text).toContain('alice: buy maotai'); // the quote
+    expect(text).toContain('▎'); // quote bar
+    expect(text).toContain('alice buy maotai'); // quote: name + snippet, no colon
     expect(text).toContain('agreed'); // the reply body
   });
 
