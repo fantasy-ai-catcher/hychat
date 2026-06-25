@@ -13,7 +13,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
   development mode, which emits per-render performance-timing entries that pile
   up in Node's never-cleared buffer until the heap is exhausted. The app now
   defaults to production mode, so the heap stays flat regardless of how long it
-  runs (the v0.7.1 caret change only slowed the leak; this removes it).
+  runs (the v0.7.1 caret change only slowed the leak; this removes it). The input
+  caret blinks again, since it no longer causes the leak.
 
 ## [0.7.1] - 2026-06-25
 

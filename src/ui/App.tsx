@@ -77,10 +77,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const { exit } = useApp();
   const [buffer, setBuffer] = useState(emptyBuffer);
   const input = buffer.value;
-  // Steady (non-blinking) caret. A 500ms blink interval used to re-render the
-  // whole app ~2x/sec forever; Ink leaks a little memory per re-render, so that
-  // constant render storm grew the heap until an out-of-memory crash over hours.
-  const cursorVisible = true;
+  const [cursorVisible, setCursorVisible] = useState(true);
   const [focused, setFocused] = useState(true);
   const [snapshot, setSnapshot] = useState<ChatSessionSnapshot>(() =>
     createSnapshot(fixedState ?? createInitialAppState())
@@ -128,6 +125,17 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
     }
   }, [exit, snapshot.shouldExit]);
 
+  // Blink the input caret. Safe now that the app runs React in production mode
+  // (see src/index.ts) — dev-mode React leaked memory on every re-render.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCursorVisible((current) => !current);
+    }, 500);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
 
   const [busyTick, setBusyTick] = useState(0);
   const [busyStartedAt, setBusyStartedAt] = useState<number | undefined>();
