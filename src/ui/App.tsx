@@ -45,9 +45,15 @@ import {
 } from './color-picker.js';
 import { moveItem, type ReorderDirection } from './reorder.js';
 import { buildRenderLines, sliceWindow, type MentionContext } from './scroll.js';
-import type { MentionSpan } from './mentions.js';
+import { matchesMentionPrefix, type MentionSpan } from './mentions.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
-import { isMouseSequence, watchTerminalMouse } from './terminal-mouse.js';
+import {
+  isDoubleClick,
+  isMouseSequence,
+  watchTerminalMouse,
+  type ClickStamp
+} from './terminal-mouse.js';
+import { buildReplySnippet } from './reply.js';
 
 // Rows the mouse wheel scrolls per notch.
 const WHEEL_STEP = 3;
@@ -77,10 +83,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const { exit } = useApp();
   const [buffer, setBuffer] = useState(emptyBuffer);
   const input = buffer.value;
-  // Steady (non-blinking) caret. A 500ms blink interval used to re-render the
-  // whole app ~2x/sec forever; Ink leaks a little memory per re-render, so that
-  // constant render storm grew the heap until an out-of-memory crash over hours.
-  const cursorVisible = true;
+  const [cursorVisible, setCursorVisible] = useState(true);
   const [focused, setFocused] = useState(true);
   const [snapshot, setSnapshot] = useState<ChatSessionSnapshot>(() =>
     createSnapshot(fixedState ?? createInitialAppState())
@@ -128,6 +131,17 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
     }
   }, [exit, snapshot.shouldExit]);
 
+  // Blink the input caret. Safe now that the app runs React in production mode
+  // (see src/index.ts) — dev-mode React leaked memory on every re-render.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCursorVisible((current) => !current);
+    }, 500);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
 
   const [busyTick, setBusyTick] = useState(0);
   const [busyStartedAt, setBusyStartedAt] = useState<number | undefined>();
@@ -149,13 +163,39 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   // Mouse wheel scrolls the chat history. Enabling reporting captures native
   // text selection, so users hold Option/Shift to select (see terminal-mouse).
   useEffect(() => {
-    return watchTerminalMouse((direction) => {
-      if (direction === 'up') {
-        scrollUp(WHEEL_STEP);
-      } else {
-        scrollDown(WHEEL_STEP);
+    return watchTerminalMouse(
+      (direction) => {
+        if (direction === 'up') {
+          scrollUp(WHEEL_STEP);
+        } else {
+          scrollDown(WHEEL_STEP);
+        }
+      },
+      { stdin: process.stdin, stdout: process.stdout },
+      (click) => {
+        const stamp: ClickStamp = { ...click, x: click.x, y: click.y, t: Date.now() };
+        const isDouble = isDoubleClick(lastClickRef.current, stamp);
+        lastClickRef.current = stamp;
+        if (!isDouble) {
+          return;
+        }
+        const messageId = clickMapRef.current.get(click.y);
+        if (!messageId) {
+          return;
+        }
+        const state = activeStateRef.current;
+        const roomId = state.activeRoomId;
+        const message = roomId
+          ? (state.messagesByRoom[roomId] ?? []).find((m) => m.id === messageId)
+          : undefined;
+        if (message && message.kind === 'text') {
+          const { name, snippet } = buildReplySnippet(message);
+          setReplyTarget({ id: message.id, name, snippet });
+          // Prefill the composer with a mention of the person being replied to.
+          setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${name} ` }));
+        }
       }
-    });
+    );
   }, []);
 
   // Jump back to the latest when switching rooms, and close the mention picker
@@ -164,6 +204,8 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   useEffect(() => {
     setScrollOffset(0);
     setMentionOpen(false);
+    setMentionQuery('');
+    setReplyTarget(null);
   }, [activeRoomId]);
 
   useEffect(() => {
@@ -199,14 +241,32 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   const [reorderIndex, setReorderIndex] = useState(0);
   const [reorderGrabbed, setReorderGrabbed] = useState(false);
 
+  // Reply: double-clicking a chat message sets it as the reply target, shown in
+  // a banner above the composer until you send (Enter) or cancel (Esc).
+  const [replyTarget, setReplyTarget] = useState<{ id: string; name: string; snippet: string } | null>(
+    null
+  );
+  // MessageViewport writes screen-row -> messageId here each render; a click maps
+  // its row through this. The latest active state is kept in a ref so the (once-
+  // created) mouse handler can resolve the clicked message without stale closure.
+  const clickMapRef = useRef(new Map<number, string>());
+  const lastClickRef = useRef<ClickStamp | null>(null);
+  const activeStateRef = useRef(fixedState ?? snapshot.state);
+  activeStateRef.current = fixedState ?? snapshot.state;
+
   // @mention picker (composer-local; opened by typing `@` at a word boundary).
+  // Typing more characters filters the member list by name prefix.
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionQuery, setMentionQuery] = useState('');
   const mentionMembers = selectMembers(
     fixedState ?? snapshot.state,
     (fixedState ?? snapshot.state).activeRoomId,
     snapshot.user?.id,
     focused
+  );
+  const mentionFiltered = mentionMembers.filter((member) =>
+    matchesMentionPrefix(member.displayName ?? member.userId, mentionQuery)
   );
   const watchReorderOpen = snapshot.watchReorderOpen;
   useEffect(() => {
@@ -230,7 +290,14 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       return;
     }
 
-    setSnapshot(await session.handleLine(line));
+    // Attach the reply target (if any) as the message's metadata, then clear it.
+    const reply = replyTarget
+      ? { replyTo: replyTarget.id, replyToName: replyTarget.name, replyToSnippet: replyTarget.snippet }
+      : undefined;
+    if (reply && !trimmed.startsWith('/')) {
+      setReplyTarget(null);
+    }
+    setSnapshot(await session.handleLine(line, reply && !trimmed.startsWith('/') ? reply : undefined));
   }
 
   useInput((value, key) => {
@@ -305,16 +372,21 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
         return;
       }
       if (key.escape) {
+        // Cancel: drop the literal `@` + whatever was typed into the buffer.
         setMentionOpen(false);
-        setBuffer((current) => applyEditorAction(current, { type: 'insert', text: '@' }));
+        setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${mentionQuery}` }));
+        setMentionQuery('');
         return;
       }
       if (key.return || key.tab) {
-        const name = mentionMembers[mentionIndex]?.displayName ?? mentionMembers[mentionIndex]?.userId;
+        const chosen = mentionFiltered[Math.min(mentionIndex, mentionFiltered.length - 1)];
+        const name = chosen?.displayName ?? chosen?.userId;
         setMentionOpen(false);
-        if (name) {
-          setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${name} ` }));
-        }
+        // A match inserts `@name `; no match keeps the literal `@query`.
+        setBuffer((current) =>
+          applyEditorAction(current, { type: 'insert', text: name ? `@${name} ` : `@${mentionQuery}` })
+        );
+        setMentionQuery('');
         return;
       }
       if (key.upArrow) {
@@ -322,7 +394,18 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
         return;
       }
       if (key.downArrow) {
-        setMentionIndex((current) => Math.min(mentionMembers.length - 1, current + 1));
+        setMentionIndex((current) => Math.min(mentionFiltered.length - 1, current + 1));
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setMentionQuery((current) => current.slice(0, -1));
+        setMentionIndex(0);
+        return;
+      }
+      // A printable character extends the filter query.
+      if (value && value.length === 1 && value >= ' ' && !key.ctrl && !key.meta) {
+        setMentionQuery((current) => current + value);
+        setMentionIndex(0);
         return;
       }
       return; // mention picker swallows all other keys
@@ -330,6 +413,12 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
 
     if (key.ctrl && value === 'c') {
       exit();
+      return;
+    }
+
+    // Esc cancels a pending reply (when nothing modal is open).
+    if (key.escape && replyTarget) {
+      setReplyTarget(null);
       return;
     }
 
@@ -384,6 +473,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       const before = buffer.cursor > 0 ? chars[buffer.cursor - 1] : undefined;
       if (before === undefined || /\s/.test(before)) {
         setMentionIndex(0);
+        setMentionQuery('');
         setMentionOpen(true);
         return;
       }
@@ -449,9 +539,12 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       reorderIndex={reorderIndex}
       reorderGrabbed={reorderGrabbed}
       mentionOpen={mentionOpen}
-      mentionMembers={mentionMembers}
+      mentionMembers={mentionFiltered}
       mentionIndex={mentionIndex}
+      mentionQuery={mentionQuery}
       selfName={snapshot.user?.displayName}
+      replyTarget={replyTarget}
+      clickMapRef={clickMapRef}
     />
   );
 }
@@ -491,7 +584,10 @@ type AppShellProps = {
   mentionOpen?: boolean;
   mentionMembers?: MemberView[];
   mentionIndex?: number;
+  mentionQuery?: string;
   selfName?: string;
+  replyTarget?: { id: string; name: string; snippet: string } | null;
+  clickMapRef?: { current: Map<number, string> };
 };
 
 export function AppShell({
@@ -524,7 +620,10 @@ export function AppShell({
   mentionOpen = false,
   mentionMembers = [],
   mentionIndex = 0,
-  selfName
+  mentionQuery = '',
+  selfName,
+  replyTarget,
+  clickMapRef
 }: AppShellProps) {
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId);
   const roomId = activeRoom?.id;
@@ -548,8 +647,11 @@ export function AppShell({
   // The reorder panel is a vertical list: one row per stock plus 4 rows of
   // chrome (top+bottom border, title, hint).
   const reorderHeight = watchReorderOpen ? reorderItems.length + 4 : 0;
-  const mentionHeight = mentionOpen ? mentionMembers.length + 4 : 0;
-  const bottomHeight = statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight;
+  // +4 chrome (borders, title, hint); at least 1 row for the list / "no match".
+  const mentionHeight = mentionOpen ? Math.max(mentionMembers.length, 1) + 4 : 0;
+  const replyBannerHeight = replyTarget ? 1 : 0;
+  const bottomHeight =
+    statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight + replyBannerHeight;
   // Highlight @<name> tokens (any room member) and mark messages that mention me.
   // Reuse the member list already computed for the picker rather than re-deriving.
   const mentionContext: MentionContext = {
@@ -609,7 +711,9 @@ export function AppShell({
         height: chatHeight,
         scrollOffset,
         showTimestamps,
-        mentionContext
+        mentionContext,
+        topRow: topHeight,
+        clickMapRef
       })}
       <Box flexDirection="column" height={bottomHeight} flexShrink={0}>
         {colorPickerOpen ? (
@@ -619,7 +723,12 @@ export function AppShell({
           <WatchReorder items={reorderItems} index={reorderIndex} grabbed={reorderGrabbed} />
         ) : null}
         {mentionOpen ? (
-          <MentionPicker members={mentionMembers} index={mentionIndex} />
+          <MentionPicker members={mentionMembers} index={mentionIndex} query={mentionQuery} />
+        ) : null}
+        {replyTarget ? (
+          <Text dimColor>
+            ↳ Replying to {replyTarget.name}: {replyTarget.snippet}  (Esc to cancel)
+          </Text>
         ) : null}
         <StatusText text={statusText} busy={busy} busyTick={busyTick} busyElapsed={busyElapsed} />
         <InputComposer
@@ -849,28 +958,35 @@ export function WatchReorder({ items, index, grabbed }: WatchReorderProps) {
 export type MentionPickerProps = {
   members: MemberView[];
   index: number;
+  query?: string;
 };
 
-export function MentionPicker({ members, index }: MentionPickerProps) {
+export function MentionPicker({ members, index, query = '' }: MentionPickerProps) {
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-      <Text bold>Mention someone</Text>
-      <Text dimColor>↑↓ to move · Enter to insert · Esc to cancel</Text>
-      {members.map((member, rowIndex) => {
-        const selected = rowIndex === index;
-        const name = member.displayName ?? member.userId;
-        return (
-          <Box key={member.userId}>
-            <Text
-              color={selected ? undefined : resolveProfileColor(member.displayColor)}
-              inverse={selected}
-              bold={selected}
-            >
-              {selected ? '▸' : ' '} @{name}
-            </Text>
-          </Box>
-        );
-      })}
+      <Text bold>
+        Mention someone{query ? <Text color="cyan"> @{query}</Text> : null}
+      </Text>
+      <Text dimColor>↑↓ to move · type to filter · Enter to insert · Esc to cancel</Text>
+      {members.length === 0 ? (
+        <Text dimColor>no match</Text>
+      ) : (
+        members.map((member, rowIndex) => {
+          const selected = rowIndex === index;
+          const name = member.displayName ?? member.userId;
+          return (
+            <Box key={member.userId}>
+              <Text
+                color={selected ? undefined : resolveProfileColor(member.displayColor)}
+                inverse={selected}
+                bold={selected}
+              >
+                {selected ? '▸' : ' '} @{name}
+              </Text>
+            </Box>
+          );
+        })
+      )}
     </Box>
   );
 }
@@ -995,11 +1111,19 @@ export type MessageViewportProps = {
   showTimestamps?: boolean;
   height: number;
   mentionContext?: MentionContext;
+  // 0-based screen row of the viewport's first line; with clickMapRef it lets a
+  // mouse click map a screen row back to the message rendered there.
+  topRow?: number;
+  clickMapRef?: { current: Map<number, string> };
 };
 
-// Split a row body into plain / `@<name>` segments so the mentions can be
-// accent-colored. Returns one plain segment when there are no mention spans.
-function renderMentionBody(body: string, spans: MentionSpan[] | undefined): React.ReactNode {
+// Split a row body into plain / `@<name>` segments. A mention of me renders as a
+// light-background pill; mentions of others are just font-colored.
+function renderMentionBody(
+  body: string,
+  spans: MentionSpan[] | undefined,
+  selfName?: string
+): React.ReactNode {
   if (!spans || spans.length === 0) {
     return body;
   }
@@ -1009,10 +1133,18 @@ function renderMentionBody(body: string, spans: MentionSpan[] | undefined): Reac
     if (span.start > cursor) {
       parts.push(body.slice(cursor, span.start));
     }
+    const token = body.slice(span.start, span.end);
+    const isMe = selfName !== undefined && span.name === selfName;
     parts.push(
-      <Text key={index} color="cyanBright" bold>
-        {body.slice(span.start, span.end)}
-      </Text>
+      isMe ? (
+        <Text key={index} backgroundColor="#3b5b8c" color="whiteBright">
+          {token}
+        </Text>
+      ) : (
+        <Text key={index} color="cyan">
+          {token}
+        </Text>
+      )
     );
     cursor = span.end;
   });
@@ -1028,13 +1160,26 @@ export function MessageViewport({
   scrollOffset = 0,
   height,
   showTimestamps,
-  mentionContext
+  mentionContext,
+  topRow = 0,
+  clickMapRef
 }: MessageViewportProps) {
   const innerWidth = width ?? process.stdout.columns ?? 80;
   // Pre-wrap to one row per line, then slice the window so older history is
   // reachable by scrolling instead of being dropped off the top.
   const allLines = buildRenderLines(messages, innerWidth, !!showTimestamps, mentionContext);
   const { lines } = sliceWindow(allLines, height, scrollOffset);
+
+  // Record which message sits on each visible screen row (1-based, as the
+  // terminal reports clicks) so a double-click can find the message it hit.
+  if (clickMapRef) {
+    clickMapRef.current = new Map();
+    lines.forEach((line, index) => {
+      if (line.messageId) {
+        clickMapRef.current.set(topRow + index + 1, line.messageId);
+      }
+    });
+  }
 
   return (
     <Box flexDirection="column" height={height} flexGrow={1} overflow="hidden">
@@ -1050,10 +1195,24 @@ export function MessageViewport({
                 {line.text}
               </Text>
             </Box>
+          ) : line.kind === 'reply' ? (
+            // Quote row of a reply: a "▎ " bar in the replier's profile color
+            // (so stacked replies don't blur into one gray bar), then the dim
+            // quote text right after it (no `name:` colon, so it isn't a re-sent
+            // line). The body row below shares the same bar.
+            <Box key={index} flexDirection="row">
+              <Text color={resolveProfileColor(line.senderColor)}>▎ </Text>
+              <Text dimColor>
+                {line.replyQuote?.name} {line.replyQuote?.snippet}
+              </Text>
+            </Box>
           ) : (
             <Box key={index} flexDirection="row">
-              {/* A message that mentions me gets a bright gutter bar. */}
-              {line.mentionsMe ? <Text color="cyanBright">▎</Text> : null}
+              {/* Reply body row: the colored bar with the text hugging it (no
+                  space), so the body is not indented past the bar. */}
+              {line.replyBar ? (
+                <Text color={resolveProfileColor(line.senderColor)}>▎</Text>
+              ) : null}
               {line.timestamp ? (
                 <Text color="gray" dimColor>
                   {line.timestamp}
@@ -1062,7 +1221,7 @@ export function MessageViewport({
               {line.senderLabel ? (
                 <Text color={resolveProfileColor(line.senderColor)}>{line.senderLabel} </Text>
               ) : null}
-              <Text>{renderMentionBody(line.body ?? '', line.mentions)}</Text>
+              <Text>{renderMentionBody(line.body ?? '', line.mentions, mentionContext?.selfName)}</Text>
             </Box>
           )
         )

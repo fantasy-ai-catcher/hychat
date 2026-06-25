@@ -44,8 +44,9 @@ src/
 │   │                         selects, Esc cancels); WatchReorder overlay (opened by `/watch reorder`;
 │   │                         ↑↓ move, Space grab/drop, Enter save, Esc cancel) — both pop up above
 │   │                         the input box; MentionPicker overlay (typing `@` opens it; ↑↓ + Enter
-│   │                         inserts `@name`); MessageViewport highlights `@name` tokens + marks
-│   │                         messages that mention me with a `▎` gutter;
+│   │                         inserts `@name`); MessageViewport highlights `@name` tokens (@me = pill),
+│   │                         shows a dim reply-quote row above replies, and writes a
+│   │                         screen-row→messageId map (clickMapRef) so a double-click sets the reply target;
 │   │                         MessageViewport pre-wraps + windows scrollback (buildRenderLines/
 │   │                         sliceWindow); mouse wheel + PageUp/PageDown scroll, Enter jumps to latest;
 │   │                         Ctrl+T toggles timestamps, Ctrl+S toggles the whole top panel (isPanelToggle);
@@ -60,8 +61,12 @@ src/
 │   │                         watchlist reorder panel
 │   ├── mentions.ts           [L1] pure @mention parsing: findMentionSpans (longest-first,
 │   │                         word-boundary) + mentionsName, for render-time highlight
-│   ├── terminal-mouse.ts     [L1/L2] xterm mouse reporting (DECSET 1000/1006): enable/parse SGR wheel
-│   │                         events (button 64/65) so the wheel scrolls chat; isMouseSequence drops bytes
+│   │                         (@others = colored text; @me = light-bg pill)
+│   ├── reply.ts              [L1] buildReplySnippet (sender + CJK-aware truncated body) for
+│   │                         the quoted-reply preview stored in metadata + shown above a reply
+│   ├── terminal-mouse.ts     [L1/L2] xterm mouse reporting (DECSET 1000/1006): parse SGR wheel
+│   │                         (button 64/65) to scroll + left-click (parseMouseClick/isDoubleClick)
+│   │                         for double-click-to-reply; isMouseSequence drops bytes
 │   ├── input-editor.ts       [L1] pure composer editing: InputBuffer {value,cursor},
 │   │                         applyEditorAction (cursor move/word ops/kill/newline,
 │   │                         readline-style, code-point aware)

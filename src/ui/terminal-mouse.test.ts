@@ -1,10 +1,36 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  isDoubleClick,
   isMouseSequence,
+  parseMouseClick,
   parseMouseScroll,
   watchTerminalMouse
 } from './terminal-mouse.js';
+
+describe('parseMouseClick', () => {
+  it('parses a left-button press into a 1-based cell', () => {
+    expect(parseMouseClick('\x1b[<0;12;7M')).toEqual({ x: 12, y: 7 });
+  });
+
+  it('ignores the release event and the wheel', () => {
+    expect(parseMouseClick('\x1b[<0;12;7m')).toBeNull(); // release
+    expect(parseMouseClick('\x1b[<64;3;3M')).toBeNull(); // wheel up
+  });
+});
+
+describe('isDoubleClick', () => {
+  it('is true for a near-same-cell click within 400ms', () => {
+    expect(isDoubleClick({ x: 5, y: 5, t: 1000 }, { x: 5, y: 5, t: 1300 })).toBe(true);
+    expect(isDoubleClick({ x: 5, y: 5, t: 1000 }, { x: 6, y: 5, t: 1300 })).toBe(true);
+  });
+
+  it('is false when too slow, too far, or no previous click', () => {
+    expect(isDoubleClick({ x: 5, y: 5, t: 1000 }, { x: 5, y: 5, t: 1500 })).toBe(false);
+    expect(isDoubleClick({ x: 5, y: 5, t: 1000 }, { x: 9, y: 5, t: 1100 })).toBe(false);
+    expect(isDoubleClick(null, { x: 5, y: 5, t: 1100 })).toBe(false);
+  });
+});
 
 describe('parseMouseScroll', () => {
   it('reads a wheel-up SGR event (button 64)', () => {

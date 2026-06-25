@@ -542,6 +542,36 @@ describe('App', () => {
     expect(text).toContain('gray');
   });
 
+  it('renders a dim reply-quote line above a reply message', () => {
+    const text = collectText(
+      MessageViewport({
+        messages: [
+          {
+            id: 'm2',
+            roomId: 'room-1',
+            senderId: 'u2',
+            senderName: 'bob',
+            kind: 'text',
+            body: 'agreed',
+            metadata: { replyTo: 'm1', replyToName: 'alice', replyToSnippet: 'buy maotai' },
+            createdAt: '2026-06-25T08:00:00.000Z'
+          }
+        ],
+        width: 80,
+        height: 10
+      })
+    );
+    expect(text).toContain('▎'); // quote bar
+    expect(text).toContain('alice buy maotai'); // quote: name + snippet, no colon
+    expect(text).toContain('agreed'); // the reply body
+  });
+
+  it('shows the filter query and a no-match notice in the mention picker', () => {
+    const text = collectText(MentionPicker({ members: [], index: 0, query: 'zz' }));
+    expect(text).toContain('zz'); // the active filter
+    expect(text).toContain('no match');
+  });
+
   it('lists members (with @) in the mention picker', () => {
     const text = collectText(
       MentionPicker({

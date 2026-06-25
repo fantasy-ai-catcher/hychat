@@ -43,6 +43,40 @@ export function isMouseSequence(chunk: string): boolean {
   return SGR_MOUSE_ONLY.test(chunk);
 }
 
+export type MouseClick = { x: number; y: number };
+
+const LEFT_BUTTON = 0;
+
+// Pure: classify a chunk as a left-button press (SGR `<0;col;rowM`). Returns the
+// 1-based terminal cell, or null. Last click in the chunk wins. We match the
+// press ("M"), not the release ("m"), so one physical click reports once.
+export function parseMouseClick(chunk: string): MouseClick | null {
+  const re = /\x1b?\[<(\d+);(\d+);(\d+)([Mm])/g;
+  let result: MouseClick | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(chunk)) !== null) {
+    if (Number(match[1]) === LEFT_BUTTON && match[4] === 'M') {
+      result = { x: Number(match[2]), y: Number(match[3]) };
+    }
+  }
+  return result;
+}
+
+export type ClickStamp = MouseClick & { t: number };
+const DOUBLE_CLICK_MS = 400;
+
+// A second left-click within 400ms and ~the same cell as the previous one.
+export function isDoubleClick(prev: ClickStamp | null, next: ClickStamp): boolean {
+  if (!prev) {
+    return false;
+  }
+  return (
+    next.t - prev.t <= DOUBLE_CLICK_MS &&
+    Math.abs(next.x - prev.x) <= 1 &&
+    Math.abs(next.y - prev.y) <= 1
+  );
+}
+
 type MouseStreams = {
   stdin: Pick<NodeJS.ReadStream, 'on' | 'off'> & { isTTY?: boolean };
   stdout: Pick<NodeJS.WriteStream, 'write'> & { isTTY?: boolean };
@@ -52,18 +86,24 @@ type MouseStreams = {
 // Returns a cleanup that disables reporting and detaches the listener.
 export function watchTerminalMouse(
   onScroll: (direction: ScrollDirection) => void,
-  streams: MouseStreams = { stdin: process.stdin, stdout: process.stdout }
+  streams: MouseStreams = { stdin: process.stdin, stdout: process.stdout },
+  onClick?: (click: MouseClick) => void
 ): () => void {
   if (!streams.stdout.isTTY) {
     return () => {};
   }
   streams.stdout.write(ENABLE_MOUSE);
   const onData = (data: Buffer | string) => {
-    const direction = parseMouseScroll(
-      typeof data === 'string' ? data : data.toString('latin1')
-    );
+    const chunk = typeof data === 'string' ? data : data.toString('latin1');
+    const direction = parseMouseScroll(chunk);
     if (direction !== null) {
       onScroll(direction);
+    }
+    if (onClick) {
+      const click = parseMouseClick(chunk);
+      if (click) {
+        onClick(click);
+      }
     }
   };
   streams.stdin.on('data', onData);

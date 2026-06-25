@@ -1,7 +1,7 @@
 import stringWidth from 'string-width';
 
 import { formatActivityLine, formatBeijingTime, type ChatMessage } from './state.js';
-import { findMentionSpans, mentionsName, type MentionSpan } from './mentions.js';
+import { findMentionSpans, type MentionSpan } from './mentions.js';
 
 // Member names (to highlight @<name>) + my own name (to flag messages that
 // mention me). Passed through so highlighting stays a pure render-time concern.
@@ -16,17 +16,36 @@ export type MentionContext = { memberNames: string[]; selfName?: string };
 //   kind 'system' — a centered, dim room-activity note. `text` already includes
 //                   the "· " bullet; `timestamp` (if any) sits on the first row.
 export type RenderLine = {
-  kind: 'text' | 'system';
+  kind: 'text' | 'system' | 'reply';
   body?: string;
   text?: string;
   senderLabel?: string;
   senderColor?: string;
   timestamp?: string;
-  // `@<name>` spans within this row's `body` (for accent highlighting), and
-  // whether this row's message mentions the current user (for a gutter marker).
+  // `@<name>` spans within this row's `body` (for accent highlighting).
   mentions?: MentionSpan[];
-  mentionsMe?: boolean;
+  // The message this row belongs to, so a click can map a screen row back to a
+  // message (set on every row of a text message, incl. its reply-quote row).
+  messageId?: string;
+  // For a `kind: 'reply'` row: the quoted parent (sender + snippet) shown dim
+  // above the reply body. `senderColor` colors the `▎` bar with the replier's
+  // profile color so consecutive replies don't blur into one gray bar.
+  replyQuote?: { name: string; snippet: string };
+  // True on every row of a reply (quote + body) so the same colored "▎ " bar
+  // runs down the whole block; text sits right after the bar, no extra indent.
+  replyBar?: boolean;
 };
+
+// Pull the quoted-reply preview a message carries in its metadata, if any.
+function replyQuoteOf(message: ChatMessage): { name: string; snippet: string } | undefined {
+  const meta = message.metadata as Record<string, unknown> | undefined;
+  const name = typeof meta?.replyToName === 'string' ? meta.replyToName : undefined;
+  const snippet = typeof meta?.replyToSnippet === 'string' ? meta.replyToSnippet : undefined;
+  if (meta?.replyTo && name !== undefined && snippet !== undefined) {
+    return { name, snippet };
+  }
+  return undefined;
+}
 
 // Greedy display-width wrap. The first row gets `firstWidth` columns (the rest
 // after a sender label / timestamp prefix), continuation rows get `restWidth`.
@@ -83,15 +102,25 @@ export function buildRenderLines(
       continue;
     }
 
+    // A reply renders a colored "▎ " bar (the replier's profile color) down its
+    // whole block — the quote row and every body row. Text sits right after the
+    // bar with no extra indent; the quote is dim, the body is normal.
+    const quote = replyQuoteOf(message);
+    const barWidth = quote ? 1 : 0; // body bar is a bare "▎" (text hugs it)
+    if (quote) {
+      lines.push({
+        kind: 'reply',
+        replyQuote: quote,
+        senderColor: message.senderColor,
+        messageId: message.id,
+        replyBar: true
+      });
+    }
+
     const senderLabel = `${message.senderName ?? message.senderId}:`;
-    const mentionsMe = mentionContext ? mentionsName(message.body, mentionContext.selfName) : false;
-    // A mention-of-me message renders a 1-column "▎" gutter on every row, so
-    // reserve that column on every row's wrap budget too — otherwise the body
-    // overflows by one column and the line count (scroll math) is off.
-    const gutterWidth = mentionsMe ? 1 : 0;
-    // First row budget is reduced by the timestamp + "label " prefix.
+    // First row budget is reduced by the timestamp + "label " prefix and the bar.
     const prefixWidth = tsWidth + stringWidth(senderLabel) + 1;
-    const rows = wrapByWidth(message.body, width - prefixWidth - gutterWidth, width - gutterWidth);
+    const rows = wrapByWidth(message.body, width - prefixWidth - barWidth, width - barWidth);
     rows.forEach((row, index) => {
       const mentions =
         memberNames.length > 0 ? findMentionSpans(row, memberNames) : undefined;
@@ -105,9 +134,17 @@ export function buildRenderLines(
               senderColor: message.senderColor,
               timestamp: tsPrefix || undefined,
               mentions: spans,
-              mentionsMe
+              messageId: message.id,
+              replyBar: quote ? true : undefined
             }
-          : { kind: 'text', body: row, mentions: spans, mentionsMe }
+          : {
+              kind: 'text',
+              body: row,
+              mentions: spans,
+              messageId: message.id,
+              senderColor: quote ? message.senderColor : undefined,
+              replyBar: quote ? true : undefined
+            }
       );
     });
   }

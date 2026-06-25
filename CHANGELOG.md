@@ -8,6 +8,26 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- Reply to a message: double-click it in the chat to reply (a banner shows what
+  you're replying to and the composer is prefilled with `@them`; Esc cancels).
+  The reply shows a quoted line above it — a `▎` bar in the replier's color, with
+  the quoted text dim — so everyone sees the context.
+- The @mention picker now filters as you type: after `@`, keep typing to narrow
+  the member list by name prefix.
+
+### Changed
+- @mentions look cleaner: mentioning someone else is just colored text, and a
+  mention of you shows as a highlighted pill (the old `▎` marker is gone).
+
+### Fixed
+- Fixed the real cause of the out-of-memory crash: the app ran React in
+  development mode, which emits per-render performance-timing entries that pile
+  up in Node's never-cleared buffer until the heap is exhausted. The app now
+  defaults to production mode, so the heap stays flat regardless of how long it
+  runs (the v0.7.1 caret change only slowed the leak; this removes it). The input
+  caret blinks again, since it no longer causes the leak.
+
 ## [0.7.1] - 2026-06-25
 
 ### Fixed
