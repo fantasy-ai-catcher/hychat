@@ -8,6 +8,13 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- Fixed a slow memory leak that crashed the app (JavaScript heap out of memory)
+  after many hours: the input caret blinked by re-rendering the whole UI twice a
+  second, and the terminal renderer leaks a little memory per re-render, so the
+  heap grew without bound. The caret is now steady (no blink), which removes the
+  constant re-render.
+
 ## [0.7.0] - 2026-06-25
 
 ### Added
