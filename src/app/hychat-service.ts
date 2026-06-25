@@ -288,10 +288,20 @@ export function createHychatService(supabase: SupabaseLikeClient) {
     async listWatchlist(roomId: string): Promise<WatchlistRow[]> {
       const result = await supabase
         .from('room_watchlist')
-        .select('room_id,canonical_symbol,added_by,created_at')
+        .select('room_id,canonical_symbol,added_by,created_at,sort_order')
         .eq('room_id', roomId)
+        .order('sort_order', { ascending: true })
         .order('created_at', { ascending: true });
       return ensureData<WatchlistRow[]>(result);
+    },
+
+    async reorderWatchlist(roomId: string, orderedSymbols: string[]): Promise<void> {
+      await ensureData(
+        supabase.rpc('reorder_watchlist', {
+          target_room_id: roomId,
+          ordered_symbols: orderedSymbols
+        })
+      );
     },
 
     async addWatchSymbol(input: AddWatchSymbolInput): Promise<void> {
