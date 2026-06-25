@@ -1,6 +1,11 @@
 import stringWidth from 'string-width';
 
 import { formatActivityLine, formatBeijingTime, type ChatMessage } from './state.js';
+import { findMentionSpans, mentionsName, type MentionSpan } from './mentions.js';
+
+// Member names (to highlight @<name>) + my own name (to flag messages that
+// mention me). Passed through so highlighting stays a pure render-time concern.
+export type MentionContext = { memberNames: string[]; selfName?: string };
 
 // One terminal row, pre-wrapped so the viewport never relies on Ink's own
 // wrapping for height accounting (scroll math needs exact line counts).
@@ -17,6 +22,10 @@ export type RenderLine = {
   senderLabel?: string;
   senderColor?: string;
   timestamp?: string;
+  // `@<name>` spans within this row's `body` (for accent highlighting), and
+  // whether this row's message mentions the current user (for a gutter marker).
+  mentions?: MentionSpan[];
+  mentionsMe?: boolean;
 };
 
 // Greedy display-width wrap. The first row gets `firstWidth` columns (the rest
@@ -49,9 +58,11 @@ function wrapByWidth(content: string, firstWidth: number, restWidth: number): st
 export function buildRenderLines(
   messages: ChatMessage[],
   innerWidth: number,
-  showTimestamps: boolean
+  showTimestamps: boolean,
+  mentionContext?: MentionContext
 ): RenderLine[] {
   const width = Math.max(1, innerWidth);
+  const memberNames = mentionContext?.memberNames ?? [];
   const lines: RenderLine[] = [];
 
   for (const message of messages) {
@@ -73,10 +84,18 @@ export function buildRenderLines(
     }
 
     const senderLabel = `${message.senderName ?? message.senderId}:`;
+    const mentionsMe = mentionContext ? mentionsName(message.body, mentionContext.selfName) : false;
+    // A mention-of-me message renders a 1-column "▎" gutter on every row, so
+    // reserve that column on every row's wrap budget too — otherwise the body
+    // overflows by one column and the line count (scroll math) is off.
+    const gutterWidth = mentionsMe ? 1 : 0;
     // First row budget is reduced by the timestamp + "label " prefix.
     const prefixWidth = tsWidth + stringWidth(senderLabel) + 1;
-    const rows = wrapByWidth(message.body, width - prefixWidth, width);
+    const rows = wrapByWidth(message.body, width - prefixWidth - gutterWidth, width - gutterWidth);
     rows.forEach((row, index) => {
+      const mentions =
+        memberNames.length > 0 ? findMentionSpans(row, memberNames) : undefined;
+      const spans = mentions && mentions.length > 0 ? mentions : undefined;
       lines.push(
         index === 0
           ? {
@@ -84,9 +103,11 @@ export function buildRenderLines(
               body: row,
               senderLabel,
               senderColor: message.senderColor,
-              timestamp: tsPrefix || undefined
+              timestamp: tsPrefix || undefined,
+              mentions: spans,
+              mentionsMe
             }
-          : { kind: 'text', body: row }
+          : { kind: 'text', body: row, mentions: spans, mentionsMe }
       );
     });
   }

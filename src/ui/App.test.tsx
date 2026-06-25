@@ -5,6 +5,7 @@ import {
   App,
   AppShell,
   ColorPicker,
+  MentionPicker,
   WatchReorder,
   InputComposer,
   isPanelToggle,
@@ -539,6 +540,20 @@ describe('App', () => {
     expect(text).toContain('default'); // the leading default cell
     expect(text).toContain('sage');
     expect(text).toContain('gray');
+  });
+
+  it('lists members (with @) in the mention picker', () => {
+    const text = collectText(
+      MentionPicker({
+        members: [
+          { roomId: 'room-1', userId: 'u1', displayName: 'alice', role: 'member', status: 'online', typing: false },
+          { roomId: 'room-1', userId: 'u2', displayName: 'bob', role: 'member', status: 'offline', typing: false }
+        ],
+        index: 0
+      })
+    );
+    expect(text).toContain('@alice');
+    expect(text).toContain('@bob');
   });
 
   it('lists every watched stock in the reorder panel', () => {
