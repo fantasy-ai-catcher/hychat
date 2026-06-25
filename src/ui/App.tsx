@@ -45,7 +45,7 @@ import {
 } from './color-picker.js';
 import { moveItem, type ReorderDirection } from './reorder.js';
 import { buildRenderLines, sliceWindow, type MentionContext } from './scroll.js';
-import type { MentionSpan } from './mentions.js';
+import { matchesMentionPrefix, type MentionSpan } from './mentions.js';
 import { isFocusEventOnly, watchTerminalFocus } from './terminal-focus.js';
 import {
   isDoubleClick,
@@ -204,6 +204,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   useEffect(() => {
     setScrollOffset(0);
     setMentionOpen(false);
+    setMentionQuery('');
     setReplyTarget(null);
   }, [activeRoomId]);
 
@@ -254,13 +255,18 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
   activeStateRef.current = fixedState ?? snapshot.state;
 
   // @mention picker (composer-local; opened by typing `@` at a word boundary).
+  // Typing more characters filters the member list by name prefix.
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionQuery, setMentionQuery] = useState('');
   const mentionMembers = selectMembers(
     fixedState ?? snapshot.state,
     (fixedState ?? snapshot.state).activeRoomId,
     snapshot.user?.id,
     focused
+  );
+  const mentionFiltered = mentionMembers.filter((member) =>
+    matchesMentionPrefix(member.displayName ?? member.userId, mentionQuery)
   );
   const watchReorderOpen = snapshot.watchReorderOpen;
   useEffect(() => {
@@ -366,16 +372,21 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
         return;
       }
       if (key.escape) {
+        // Cancel: drop the literal `@` + whatever was typed into the buffer.
         setMentionOpen(false);
-        setBuffer((current) => applyEditorAction(current, { type: 'insert', text: '@' }));
+        setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${mentionQuery}` }));
+        setMentionQuery('');
         return;
       }
       if (key.return || key.tab) {
-        const name = mentionMembers[mentionIndex]?.displayName ?? mentionMembers[mentionIndex]?.userId;
+        const chosen = mentionFiltered[Math.min(mentionIndex, mentionFiltered.length - 1)];
+        const name = chosen?.displayName ?? chosen?.userId;
         setMentionOpen(false);
-        if (name) {
-          setBuffer((current) => applyEditorAction(current, { type: 'insert', text: `@${name} ` }));
-        }
+        // A match inserts `@name `; no match keeps the literal `@query`.
+        setBuffer((current) =>
+          applyEditorAction(current, { type: 'insert', text: name ? `@${name} ` : `@${mentionQuery}` })
+        );
+        setMentionQuery('');
         return;
       }
       if (key.upArrow) {
@@ -383,7 +394,18 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
         return;
       }
       if (key.downArrow) {
-        setMentionIndex((current) => Math.min(mentionMembers.length - 1, current + 1));
+        setMentionIndex((current) => Math.min(mentionFiltered.length - 1, current + 1));
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setMentionQuery((current) => current.slice(0, -1));
+        setMentionIndex(0);
+        return;
+      }
+      // A printable character extends the filter query.
+      if (value && value.length === 1 && value >= ' ' && !key.ctrl && !key.meta) {
+        setMentionQuery((current) => current + value);
+        setMentionIndex(0);
         return;
       }
       return; // mention picker swallows all other keys
@@ -451,6 +473,7 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       const before = buffer.cursor > 0 ? chars[buffer.cursor - 1] : undefined;
       if (before === undefined || /\s/.test(before)) {
         setMentionIndex(0);
+        setMentionQuery('');
         setMentionOpen(true);
         return;
       }
@@ -516,8 +539,9 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
       reorderIndex={reorderIndex}
       reorderGrabbed={reorderGrabbed}
       mentionOpen={mentionOpen}
-      mentionMembers={mentionMembers}
+      mentionMembers={mentionFiltered}
       mentionIndex={mentionIndex}
+      mentionQuery={mentionQuery}
       selfName={snapshot.user?.displayName}
       replyTarget={replyTarget}
       clickMapRef={clickMapRef}
@@ -560,6 +584,7 @@ type AppShellProps = {
   mentionOpen?: boolean;
   mentionMembers?: MemberView[];
   mentionIndex?: number;
+  mentionQuery?: string;
   selfName?: string;
   replyTarget?: { id: string; name: string; snippet: string } | null;
   clickMapRef?: { current: Map<number, string> };
@@ -595,6 +620,7 @@ export function AppShell({
   mentionOpen = false,
   mentionMembers = [],
   mentionIndex = 0,
+  mentionQuery = '',
   selfName,
   replyTarget,
   clickMapRef
@@ -621,7 +647,8 @@ export function AppShell({
   // The reorder panel is a vertical list: one row per stock plus 4 rows of
   // chrome (top+bottom border, title, hint).
   const reorderHeight = watchReorderOpen ? reorderItems.length + 4 : 0;
-  const mentionHeight = mentionOpen ? mentionMembers.length + 4 : 0;
+  // +4 chrome (borders, title, hint); at least 1 row for the list / "no match".
+  const mentionHeight = mentionOpen ? Math.max(mentionMembers.length, 1) + 4 : 0;
   const replyBannerHeight = replyTarget ? 1 : 0;
   const bottomHeight =
     statusHeight + 3 + inputLines + pickerHeight + reorderHeight + mentionHeight + replyBannerHeight;
@@ -696,7 +723,7 @@ export function AppShell({
           <WatchReorder items={reorderItems} index={reorderIndex} grabbed={reorderGrabbed} />
         ) : null}
         {mentionOpen ? (
-          <MentionPicker members={mentionMembers} index={mentionIndex} />
+          <MentionPicker members={mentionMembers} index={mentionIndex} query={mentionQuery} />
         ) : null}
         {replyTarget ? (
           <Text dimColor>
@@ -931,28 +958,35 @@ export function WatchReorder({ items, index, grabbed }: WatchReorderProps) {
 export type MentionPickerProps = {
   members: MemberView[];
   index: number;
+  query?: string;
 };
 
-export function MentionPicker({ members, index }: MentionPickerProps) {
+export function MentionPicker({ members, index, query = '' }: MentionPickerProps) {
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1}>
-      <Text bold>Mention someone</Text>
-      <Text dimColor>↑↓ to move · Enter to insert · Esc to cancel</Text>
-      {members.map((member, rowIndex) => {
-        const selected = rowIndex === index;
-        const name = member.displayName ?? member.userId;
-        return (
-          <Box key={member.userId}>
-            <Text
-              color={selected ? undefined : resolveProfileColor(member.displayColor)}
-              inverse={selected}
-              bold={selected}
-            >
-              {selected ? '▸' : ' '} @{name}
-            </Text>
-          </Box>
-        );
-      })}
+      <Text bold>
+        Mention someone{query ? <Text color="cyan"> @{query}</Text> : null}
+      </Text>
+      <Text dimColor>↑↓ to move · type to filter · Enter to insert · Esc to cancel</Text>
+      {members.length === 0 ? (
+        <Text dimColor>no match</Text>
+      ) : (
+        members.map((member, rowIndex) => {
+          const selected = rowIndex === index;
+          const name = member.displayName ?? member.userId;
+          return (
+            <Box key={member.userId}>
+              <Text
+                color={selected ? undefined : resolveProfileColor(member.displayColor)}
+                inverse={selected}
+                bold={selected}
+              >
+                {selected ? '▸' : ' '} @{name}
+              </Text>
+            </Box>
+          );
+        })
+      )}
     </Box>
   );
 }

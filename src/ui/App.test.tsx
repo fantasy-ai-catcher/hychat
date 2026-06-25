@@ -566,6 +566,12 @@ describe('App', () => {
     expect(text).toContain('agreed'); // the reply body
   });
 
+  it('shows the filter query and a no-match notice in the mention picker', () => {
+    const text = collectText(MentionPicker({ members: [], index: 0, query: 'zz' }));
+    expect(text).toContain('zz'); // the active filter
+    expect(text).toContain('no match');
+  });
+
   it('lists members (with @) in the mention picker', () => {
     const text = collectText(
       MentionPicker({

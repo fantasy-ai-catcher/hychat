@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
-import { findMentionSpans, mentionsName } from './mentions.js';
+import { findMentionSpans, matchesMentionPrefix, mentionsName } from './mentions.js';
+
+describe('matchesMentionPrefix', () => {
+  it('matches everyone on an empty query', () => {
+    expect(matchesMentionPrefix('alice', '')).toBe(true);
+  });
+  it('matches a case-insensitive prefix', () => {
+    expect(matchesMentionPrefix('Alice', 'al')).toBe(true);
+    expect(matchesMentionPrefix('alice', 'AL')).toBe(true);
+  });
+  it('does not match a non-prefix', () => {
+    expect(matchesMentionPrefix('bob', 'al')).toBe(false);
+    expect(matchesMentionPrefix('alice', 'ice')).toBe(false); // prefix, not substring
+  });
+});
 
 const members = ['alice', 'alicea', 'Cool Cat', 'bob'];
 

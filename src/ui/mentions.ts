@@ -42,6 +42,15 @@ export function findMentionSpans(text: string, memberNames: string[]): MentionSp
   return spans;
 }
 
+// Whether `name` matches the mention-picker query (case-insensitive prefix).
+// An empty query matches everyone.
+export function matchesMentionPrefix(name: string, query: string): boolean {
+  if (query === '') {
+    return true;
+  }
+  return name.toLowerCase().startsWith(query.toLowerCase());
+}
+
 // Whether `text` @-mentions exactly `name`.
 export function mentionsName(text: string, name: string | undefined): boolean {
   if (!name) {
