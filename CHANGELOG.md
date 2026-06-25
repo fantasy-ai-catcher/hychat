@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-25
+
 ### Fixed
 - Fixed a slow memory leak that crashed the app (JavaScript heap out of memory)
   after many hours: the input caret blinked by re-rendering the whole UI twice a
