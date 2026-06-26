@@ -8,6 +8,8 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-26
+
 ### Added
 - Get a sound when someone @mentions you. Pick how with `/notify`: `bell`
   (terminal bell, the default), `sound` (a macOS chime), `banner` (a desktop
