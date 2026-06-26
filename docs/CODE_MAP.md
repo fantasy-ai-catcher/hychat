@@ -12,13 +12,14 @@ update this file in the same change. A stale map is a bug.
 src/
 ├── index.ts                  process entry point; calls runCli
 ├── cli.ts                    CLI parsing (--profile, doctor, --version), .env load,
-│                             and wiring (Supabase client → service → realtime → Ink App)
+│                             and wiring (Supabase client → service → realtime →
+│                             notifier + prefs.json → Ink App)
 ├── types.ts                  shared scalar type aliases (UUID, ISODateTime)
 ├── config/
 │   └── env.ts                runtime env schema / validation (zod)
 ├── chat/
 │   └── commands.ts           [L1] slash-command parsing → typed ParsedChatInput
-│                             (/start /verify /name /join /leave /rooms /invite-code /watch /stock /color …)
+│                             (/start /verify /name /join /leave /rooms /invite-code /watch /stock /color /notify …)
 ├── app/
 │   ├── chat-session.ts       [L1] session orchestration: login/verify flow, command
 │   │                         handling, pending-status + help text, service interface;
@@ -26,7 +27,9 @@ src/
 │   │                         colorPickerOpen state + pickColor/closeColorPicker methods
 │   │                         (/color list opens the picker);
 │   │                         watchReorderOpen state + reorderWatchlist/closeWatchReorder
-│   │                         (/watch reorder opens the reorder panel)
+│   │                         (/watch reorder opens the reorder panel);
+│   │                         notifySettings + maybeRingForMention (rings the notifier
+│   │                         when an incoming message @mentions me); /notify command
 │   ├── hychat-service.ts     [L3] all Supabase calls: auth/OTP, ensureProfile/setDisplayName,
 │   │                         rooms (listRoomsWithCounts/createRoom/joinRoom/leaveRoom), messages,
 │   │                         members, invite codes, quotes, touchPresence (heartbeat_presence RPC)
@@ -35,6 +38,14 @@ src/
 │   │                         upgrade hychat` when outdated or check fails
 │   │                         (HYCHAT_SKIP_UPDATE_CHECK bypass; runUpdateGate is the shell)
 │   ├── session-storage.ts    local session file persistence + --profile paths
+│   │                         (session.json auth + prefs.json local app prefs)
+│   ├── mention-notify.ts     [L1] @mention sound policy: NotifySettings
+│   │                         (channel off|bell|sound|banner + when always|unfocused),
+│   │                         shouldRingForMention (suppress own/no-mention/focused),
+│   │                         read/writeNotifySettings (prefs.json), defaults
+│   ├── notify-sound.ts       [L1+shell] BEL + OSC 9 (iTerm2) / OSC 777 (Ghostty)
+│   │                         sequence builders + detectTerminalProgram +
+│   │                         createTerminalNotifier (bell/banner write, sound→afplay)
 │   ├── profile-colors.ts     [L1] muted color palette + helpers
 │   └── realtime-adapter.ts   thin wrapper over supabase/realtime
 ├── ui/

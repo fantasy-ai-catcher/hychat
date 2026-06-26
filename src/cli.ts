@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -8,10 +9,13 @@ import { render } from 'ink';
 import { createHychatService } from './app/hychat-service.js';
 import { createRealtimeAdapter } from './app/realtime-adapter.js';
 import {
+  getDefaultPreferencesPath,
   getDefaultSessionPath,
+  getProfilePreferencesPath,
   getProfileSessionPath,
   JsonFileStorage
 } from './app/session-storage.js';
+import { createTerminalNotifier } from './app/notify-sound.js';
 import { runUpdateGate } from './app/update-check.js';
 import { loadEnv, parseEnv } from './config/env.js';
 import { createHychatSupabaseClient } from './supabase/client.js';
@@ -152,6 +156,19 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     const service = createHychatService(supabase);
     const realtime = createRealtimeAdapter(supabase);
 
+    // Local @mention notification preference + the player that turns it into a
+    // sound/banner. Stored per machine (and per --profile), never in Supabase.
+    const prefsPath = cliOptions.profile
+      ? getProfilePreferencesPath(cliOptions.profile, options.homeDir)
+      : getDefaultPreferencesPath(options.homeDir);
+    const prefs = new JsonFileStorage(prefsPath);
+    const notifier = createTerminalNotifier({
+      stdout: process.stdout,
+      spawn,
+      env: process.env,
+      platform: process.platform
+    });
+
     // Open the realtime websocket eagerly so the first /join does not pay the
     // socket handshake before a member's presence can be announced. The auth
     // token is applied to the live socket as soon as the session resolves.
@@ -161,7 +178,9 @@ export async function runCli(options: RunCliOptions): Promise<void> {
       React.createElement(App, {
         service,
         realtime,
-        showPresenceActivity: config.showPresenceActivity
+        showPresenceActivity: config.showPresenceActivity,
+        notifier,
+        prefs
       })
     );
 

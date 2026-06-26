@@ -22,8 +22,15 @@ export type ParsedChatInput =
   | ColorShowCommand
   | ColorListCommand
   | ColorSetCommand
+  | NotifyShowCommand
+  | NotifySetCommand
+  | NotifyWhenCommand
+  | NotifyTestCommand
   | HelpCommand
   | QuitCommand;
+
+export type NotifyChannel = 'off' | 'bell' | 'sound' | 'banner';
+export type NotifyWhen = 'always' | 'unfocused';
 
 type StartCommand = {
   type: 'command';
@@ -50,6 +57,10 @@ type RefreshCommand = { type: 'command'; name: 'refresh'; symbol?: string };
 type ColorShowCommand = { type: 'command'; name: 'color-show' };
 type ColorListCommand = { type: 'command'; name: 'color-list' };
 type ColorSetCommand = { type: 'command'; name: 'color-set'; color: string };
+type NotifyShowCommand = { type: 'command'; name: 'notify-show' };
+type NotifySetCommand = { type: 'command'; name: 'notify-set'; channel: NotifyChannel };
+type NotifyWhenCommand = { type: 'command'; name: 'notify-when'; when: NotifyWhen };
+type NotifyTestCommand = { type: 'command'; name: 'notify-test' };
 type HelpCommand = { type: 'command'; name: 'help' };
 type QuitCommand = { type: 'command'; name: 'quit' };
 
@@ -124,6 +135,8 @@ export function parseChatInput(input: string): ParsedChatInput {
         : { type: 'command', name: 'refresh' };
     case '/color':
       return parseColorCommand(args);
+    case '/notify':
+      return parseNotifyCommand(args);
     default:
       return { type: 'error', message: `Unknown command: ${command}` };
   }
@@ -224,6 +237,35 @@ function parseColorCommand(args: string[]): ParsedChatInput {
   }
 
   return { type: 'error', message: 'Usage: /color [list|set <color>]' };
+}
+
+const NOTIFY_CHANNELS = new Set<NotifyChannel>(['off', 'bell', 'sound', 'banner']);
+const NOTIFY_WHENS = new Set<NotifyWhen>(['always', 'unfocused']);
+const notifyUsage = 'Usage: /notify [off|bell|sound|banner] | when <always|unfocused> | test';
+
+function parseNotifyCommand(args: string[]): ParsedChatInput {
+  const [action, value, ...extra] = args;
+
+  if (!action) {
+    return { type: 'command', name: 'notify-show' };
+  }
+
+  if (action === 'test' && !value) {
+    return { type: 'command', name: 'notify-test' };
+  }
+
+  if (action === 'when') {
+    if (!value || extra.length > 0 || !NOTIFY_WHENS.has(value as NotifyWhen)) {
+      return { type: 'error', message: 'Usage: /notify when <always|unfocused>' };
+    }
+    return { type: 'command', name: 'notify-when', when: value as NotifyWhen };
+  }
+
+  if (NOTIFY_CHANNELS.has(action as NotifyChannel) && !value) {
+    return { type: 'command', name: 'notify-set', channel: action as NotifyChannel };
+  }
+
+  return { type: 'error', message: notifyUsage };
 }
 
 function requireArgument<T extends ParsedChatInput>(
