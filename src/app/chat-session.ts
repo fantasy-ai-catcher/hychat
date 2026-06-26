@@ -246,6 +246,10 @@ const helpSections = [
         description: 'Remove a stock from the current room watchlist.'
       },
       {
+        usage: '/watch reorder',
+        description: 'Open a panel to reorder the room watchlist (↑↓ move, Space grab, Enter save).'
+      },
+      {
         usage: '/stock <symbol>',
         description: 'Load the latest quote for one stock.'
       },
