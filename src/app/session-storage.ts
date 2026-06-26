@@ -54,3 +54,18 @@ export function getProfileSessionPath(profileName: string, homeDir = homedir()):
 
   return join(homeDir, '.hychat', 'sessions', profileName, 'session.json');
 }
+
+// Local app preferences (e.g. notification settings) live beside the auth
+// session but in their own file, so Supabase's auth storage never collides with
+// our own keys.
+export function getDefaultPreferencesPath(homeDir = homedir()): string {
+  return join(homeDir, '.hychat', 'prefs.json');
+}
+
+export function getProfilePreferencesPath(profileName: string, homeDir = homedir()): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(profileName)) {
+    throw new Error('Invalid profile name. Use letters, numbers, "-" or "_".');
+  }
+
+  return join(homeDir, '.hychat', 'sessions', profileName, 'prefs.json');
+}

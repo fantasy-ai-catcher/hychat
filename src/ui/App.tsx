@@ -8,6 +8,7 @@ import {
   type CreateChatSessionOptions
 } from '../app/chat-session.js';
 import { DEFAULT_PROFILE_COLOR, resolveProfileColor } from '../app/profile-colors.js';
+import { DEFAULT_NOTIFY_SETTINGS } from '../app/mention-notify.js';
 import {
   buildWatchlistTable,
   type WatchlistDirection,
@@ -63,6 +64,8 @@ export type AppProps = {
   service?: CreateChatSessionOptions['service'];
   realtime?: CreateChatSessionOptions['realtime'];
   showPresenceActivity?: boolean;
+  notifier?: CreateChatSessionOptions['notifier'];
+  prefs?: CreateChatSessionOptions['prefs'];
 };
 
 function createSnapshot(state: AppState): ChatSessionSnapshot {
@@ -75,11 +78,19 @@ function createSnapshot(state: AppState): ChatSessionSnapshot {
     helpLines: [],
     shouldExit: false,
     colorPickerOpen: false,
-    watchReorderOpen: false
+    watchReorderOpen: false,
+    notifySettings: DEFAULT_NOTIFY_SETTINGS
   };
 }
 
-export function App({ state: fixedState, service, realtime, showPresenceActivity }: AppProps) {
+export function App({
+  state: fixedState,
+  service,
+  realtime,
+  showPresenceActivity,
+  notifier,
+  prefs
+}: AppProps) {
   const { exit } = useApp();
   const [buffer, setBuffer] = useState(emptyBuffer);
   const input = buffer.value;
@@ -95,10 +106,12 @@ export function App({ state: fixedState, service, realtime, showPresenceActivity
             service,
             realtime,
             showPresenceActivity,
+            notifier,
+            prefs,
             onSnapshotChange: setSnapshot
           })
         : undefined,
-    [service, realtime, showPresenceActivity]
+    [service, realtime, showPresenceActivity, notifier, prefs]
   );
 
   useEffect(() => {

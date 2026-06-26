@@ -106,6 +106,37 @@ describe('parseChatInput', () => {
     expect(parseChatInput('/quit')).toEqual({ type: 'command', name: 'quit' });
   });
 
+  it('parses notification commands', () => {
+    expect(parseChatInput('/notify')).toEqual({ type: 'command', name: 'notify-show' });
+    expect(parseChatInput('/notify off')).toEqual({
+      type: 'command',
+      name: 'notify-set',
+      channel: 'off'
+    });
+    expect(parseChatInput('/notify sound')).toEqual({
+      type: 'command',
+      name: 'notify-set',
+      channel: 'sound'
+    });
+    expect(parseChatInput('/notify when unfocused')).toEqual({
+      type: 'command',
+      name: 'notify-when',
+      when: 'unfocused'
+    });
+    expect(parseChatInput('/notify test')).toEqual({ type: 'command', name: 'notify-test' });
+  });
+
+  it('rejects bad notification commands', () => {
+    expect(parseChatInput('/notify nope')).toEqual({
+      type: 'error',
+      message: 'Usage: /notify [off|bell|sound|banner] | when <always|unfocused> | test'
+    });
+    expect(parseChatInput('/notify when wat')).toEqual({
+      type: 'error',
+      message: 'Usage: /notify when <always|unfocused>'
+    });
+  });
+
   it('parses room creation commands', () => {
     expect(parseChatInput('/create Friends Room')).toEqual({
       type: 'command',

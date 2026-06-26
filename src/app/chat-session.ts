@@ -23,6 +23,15 @@ import {
   formatProfileColorList,
   isProfileColorName
 } from './profile-colors.js';
+import {
+  DEFAULT_NOTIFY_SETTINGS,
+  describeNotifySettings,
+  readNotifySettings,
+  shouldRingForMention,
+  writeNotifySettings,
+  type NotifySettings
+} from './mention-notify.js';
+import type { Notifier } from './notify-sound.js';
 
 type QuoteApiResult = {
   quotes?: Array<{
@@ -136,6 +145,14 @@ export type ChatSessionSnapshot = {
   shouldExit: boolean;
   colorPickerOpen: boolean;
   watchReorderOpen: boolean;
+  notifySettings: NotifySettings;
+};
+
+// A tiny key/value store (e.g. JsonFileStorage) for local app preferences. Only
+// the bits chat-session needs, so tests can pass a plain object.
+type PreferencesStore = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
 };
 
 export type CreateChatSessionOptions = {
@@ -145,6 +162,10 @@ export type CreateChatSessionOptions = {
   // Whether to emit ephemeral "joined/left the room" activity lines on presence
   // changes. Defaults to true; the CLI wires this from HYCHAT_SHOW_PRESENCE_ACTIVITY.
   showPresenceActivity?: boolean;
+  // Plays the @mention notification sound. Omitted in tests / headless.
+  notifier?: Notifier;
+  // Persists notification preferences locally. Omitted → in-memory defaults.
+  prefs?: PreferencesStore;
 };
 
 const helpSections = [
@@ -256,6 +277,28 @@ const helpSections = [
     ]
   },
   {
+    title: 'Notifications',
+    commands: [
+      {
+        usage: '/notify',
+        description: 'Show how you are notified when someone @mentions you.'
+      },
+      {
+        usage: '/notify off|bell|sound|banner',
+        description:
+          'Choose the @mention alert: silent, terminal bell, macOS sound, or a desktop banner.'
+      },
+      {
+        usage: '/notify when always|unfocused',
+        description: 'Ring on every mention, or only when the HyChat window is unfocused.'
+      },
+      {
+        usage: '/notify test',
+        description: 'Play your current notification once, to check it works.'
+      }
+    ]
+  },
+  {
     title: 'Help',
     commands: [
       {
@@ -325,11 +368,18 @@ export function buildPendingStatusText(parsed: ParsedChatInput): string | null {
     case 'color-show':
     case 'color-list':
     case 'watch-reorder':
+    case 'notify-show':
+    case 'notify-set':
+    case 'notify-when':
+    case 'notify-test':
     case 'help':
     case 'quit':
       return null;
   }
 }
+
+const notifyUsageHint =
+  '/notify off|bell|sound|banner · /notify when always|unfocused · /notify test';
 
 const helpLines = helpSections.flatMap((section) =>
   section.commands.map((command) => command.usage)
@@ -356,6 +406,10 @@ export function createChatSession(options: CreateChatSessionOptions) {
   // The local terminal's focus, mirrored into presence so peers can tell an
   // active member (tab focused) from one who is merely connected.
   let currentFocus: 'active' | 'online' = 'active';
+  // Local @mention sound preference, loaded from prefs (defaults otherwise).
+  let notifySettings: NotifySettings = options.prefs
+    ? readNotifySettings((key) => options.prefs!.getItem(key))
+    : DEFAULT_NOTIFY_SETTINGS;
   // The first presence sync after joining is the baseline (who is already here);
   // only later changes become "joined/left" activity lines. Reset on each join.
   let presenceBaselineEstablished = false;
@@ -395,8 +449,35 @@ export function createChatSession(options: CreateChatSessionOptions) {
       helpLines,
       shouldExit,
       colorPickerOpen,
-      watchReorderOpen
+      watchReorderOpen,
+      notifySettings
     };
+  }
+
+  function persistNotifySettings(): void {
+    if (options.prefs) {
+      writeNotifySettings((key, value) => options.prefs!.setItem(key, value), notifySettings);
+    }
+  }
+
+  // Ring the local user when a freshly delivered message @mentions them. Pure
+  // decision in shouldRingForMention; the notifier turns the choice into sound.
+  function maybeRingForMention(message: ChatMessage): void {
+    if (!options.notifier) {
+      return;
+    }
+    const ring = shouldRingForMention({
+      kind: message.kind,
+      body: message.body,
+      senderId: message.senderId,
+      selfUserId: user?.id,
+      selfName: user?.displayName,
+      focused: currentFocus === 'active',
+      settings: notifySettings
+    });
+    if (ring) {
+      options.notifier.ring(notifySettings.channel, `${message.senderName} mentioned you`);
+    }
   }
 
   function emitSnapshotChange(): void {
@@ -573,7 +654,9 @@ export function createChatSession(options: CreateChatSessionOptions) {
       onMessage(message) {
         // A delivered message ends that sender's typing badge immediately.
         stopTyping(roomId, message.sender_id);
-        apply({ type: 'message-received', message: toChatMessage(message) });
+        const chatMessage = toChatMessage(message);
+        apply({ type: 'message-received', message: chatMessage });
+        maybeRingForMention(chatMessage);
         emitSnapshotChange();
       },
       onWatchlistChange() {
@@ -952,6 +1035,36 @@ export function createChatSession(options: CreateChatSessionOptions) {
         statusText = `Color set to ${user?.displayColor}.`;
         return;
       }
+
+      case 'notify-show':
+        statusText = `${describeNotifySettings(notifySettings)}\n${notifyUsageHint}`;
+        return;
+
+      case 'notify-set':
+        notifySettings = { ...notifySettings, channel: command.channel };
+        persistNotifySettings();
+        statusText =
+          command.channel === 'off'
+            ? 'Mention notifications off.'
+            : `Mention sound: ${command.channel} (when ${notifySettings.when}).`;
+        return;
+
+      case 'notify-when':
+        notifySettings = { ...notifySettings, when: command.when };
+        persistNotifySettings();
+        statusText = `Mention sound rings ${
+          command.when === 'unfocused' ? 'only when the window is unfocused' : 'on every mention'
+        }.`;
+        return;
+
+      case 'notify-test':
+        if (notifySettings.channel === 'off') {
+          statusText = 'Notifications are off. Turn one on with /notify bell|sound|banner.';
+          return;
+        }
+        options.notifier?.ring(notifySettings.channel, 'HyChat test notification');
+        statusText = `Played a test ${notifySettings.channel} notification.`;
+        return;
 
       case 'help':
         statusText = helpText;

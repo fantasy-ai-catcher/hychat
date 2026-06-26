@@ -8,6 +8,14 @@ All notable changes to HyChat are recorded here. The format loosely follows
 
 ## [Unreleased]
 
+### Added
+- Get a sound when someone @mentions you. Pick how with `/notify`: `bell`
+  (terminal bell, the default), `sound` (a macOS chime), `banner` (a desktop
+  notification in iTerm2/Ghostty), or `off`. By default it only rings when the
+  HyChat window is unfocused — switch with `/notify when always|unfocused`. Try
+  `/notify test` to hear your current setting. The choice is saved on your own
+  machine.
+
 ## [0.8.0] - 2026-06-25
 
 ### Added
